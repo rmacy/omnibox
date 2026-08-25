@@ -49,27 +49,40 @@ Hyprland reloads bindings on save. If Super+Space still opens the stock menu
 in your current session, log out and back in once — Hyprland's Lua binding
 table is rebuilt at session start.
 
-Optional (recommended): route the *bare* stock-menu route into Omnibox too, so
-`omarchy menu toggle` and the bar's menu button also open the launcher. Add to
-`~/.config/omarchy/extensions/omarchy-menu.jsonc`:
-
-```jsonc
-"root": { "action": "omarchy-shell shell toggle ryan.omnibox" }
-```
-
-Subtree routes (`system`, `capture`, `theme`, …) are unaffected.
-
 Manual summon from anywhere:
 
 ```bash
 omarchy-shell shell summon ryan.omnibox '{"query":"ghost"}'
 ```
 
-### Update / remove
+### Update
 
 ```bash
 omarchy plugin update ryan.omnibox
+```
+
+### Remove and restore the stock launcher
+
+First remove these two lines from `~/.config/hypr/bindings.lua`:
+
+```lua
+hl.unbind("SUPER + SPACE")
+o.bind("SUPER + SPACE", "Omnibox launcher", "omarchy-shell shell toggle ryan.omnibox")
+```
+
+Then reload Hyprland and remove the plugin:
+
+```bash
+hyprctl reload
 omarchy plugin remove ryan.omnibox
+```
+
+The default Omarchy `SUPER + SPACE` binding becomes active again because the
+user override no longer unbinds it. Omnibox never modifies the stock menu
+root or bar button. Optionally delete learned state:
+
+```bash
+rm -rf ~/.local/state/omnibox
 ```
 
 ## Keys

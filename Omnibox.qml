@@ -6,6 +6,7 @@ import qs.Commons
 import qs.Ui
 import "js/Calc.js" as Calc
 import "js/Fuzzy.js" as Fuzzy
+import "js/Jsonc.js" as Jsonc
 
 // Omnibox — an Alfred-style universal launcher for the Omarchy shell.
 //
@@ -98,6 +99,7 @@ Item {
   //   maxResults per-source row cap
 
   property var config: ({})
+  property string configError: ""
   readonly property var defaultConfig: ({
     "engines": {
       "DuckDuckGo": "https://duckduckgo.com/?q=%s",
@@ -130,10 +132,19 @@ Item {
     return (isFinite(n) && n > 0) ? Math.floor(n) : 8
   }
 
-  function stripJsonc(raw) {
-    return String(raw || "")
-      .replace(/^\s*\/\/[^\n]*(\n|$)/gm, "")
-      .replace(/,(\s*[}\]])/g, "$1")
+  function applyConfig(value) {
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new Error("Config root must be an object")
+    root.config = value
+    root.configError = ""
+    root.querySerial += 1
+    root.fileRows = []
+    root.providerRows = ({})
+    root.stopAsyncSearch()
+    if (!root.opened) return
+    root.rebuildDisplay()
+    var query = root.currentQuery()
+    if (query && query.charAt(0) !== ">") searchTimer.restart()
   }
 
   // ----------------------------------------------------------------- usage
@@ -735,6 +746,13 @@ Item {
   }
 
   function scanProviders() {
+    scanProc.pending = true
+    if (!scanProc.running) root.startPendingProviderScan()
+  }
+
+  function startPendingProviderScan() {
+    if (!scanProc.pending || scanProc.running) return
+    scanProc.pending = false
     scanProc.collected = ""
     scanProc.command = ["bash", "-lc",
       "for dir in " + Util.shellQuote(root.pluginProvidersDir()) + " " + Util.shellQuote(root.userProvidersDir) + "; do "
@@ -742,6 +760,15 @@ Item {
       + "for f in \"$dir\"/*; do [[ -f $f && -x $f ]] || continue; printf '%s\\t%s\\n' \"${f##*/}\" \"$f\"; done; "
       + "done"]
     scanProc.running = true
+  }
+
+  function startProviderWatcher() {
+    if (providerWatchProc.running) return
+    providerWatchProc.command = ["bash", "-lc",
+      "mkdir -p -- " + Util.shellQuote(root.userProvidersDir) + "; "
+      + "exec inotifywait -mq -e close_write,create,delete,moved_to,moved_from,attrib "
+      + "--format '%e' -- " + Util.shellQuote(root.userProvidersDir)]
+    providerWatchProc.running = true
   }
 
   function runProviders(query) {
@@ -1158,10 +1185,12 @@ Item {
 
   Process {
     id: scanProc
+    property bool pending: false
     property string collected: ""
     stdout: SplitParser {
       onRead: function(data) { scanProc.collected += data + "\n" }
     }
+    onRunningChanged: if (!running) Qt.callLater(function() { root.startPendingProviderScan() })
     onExited: {
       // User providers win over shipped ones with the same name, so the
       // shipped set is loaded first and overwritten below.
@@ -1184,6 +1213,28 @@ Item {
       root.providerList = list
       if (root.opened) root.runProviders(root.currentQuery())
     }
+  }
+
+  Process {
+    id: providerWatchProc
+    stdout: SplitParser {
+      onRead: function(_data) { providerScanTimer.restart() }
+    }
+    onRunningChanged: if (!running) providerWatchRestartTimer.restart()
+  }
+
+  Timer {
+    id: providerScanTimer
+    interval: 120
+    repeat: false
+    onTriggered: root.scanProviders()
+  }
+
+  Timer {
+    id: providerWatchRestartTimer
+    interval: 1000
+    repeat: false
+    onTriggered: root.startProviderWatcher()
   }
 
   Timer {
@@ -1217,12 +1268,15 @@ Item {
     printErrors: false
     onLoaded: {
       try {
-        var parsed = JSON.parse(root.stripJsonc(text()))
-        root.config = (parsed && typeof parsed === "object") ? parsed : ({})
-      } catch (e) { root.config = ({}) }
-      if (root.opened) root.rebuildDisplay()
+        root.applyConfig(Jsonc.parse(text()))
+      } catch (e) {
+        root.configError = String((e && e.message) || e)
+        console.warn("omnibox: keeping last valid config:", root.configError)
+      }
     }
-    onLoadFailed: { root.config = ({}) }
+    onLoadFailed: {
+      try { root.applyConfig({}) } catch (e) { }
+    }
     onFileChanged: reload()
   }
 
@@ -1352,6 +1406,7 @@ Item {
 
   Component.onCompleted: {
     root.scanProviders()
+    root.startProviderWatcher()
     root.refreshWindows()
   }
 
@@ -1379,8 +1434,13 @@ Item {
   property int maxRowsHeight: Style.space(420)
   property int layoutSerial: 0
 
-  property int cardWidth: Style.space(460)
-  readonly property int cardTop: Math.round(panel.height * 0.22)
+  readonly property int cardWidth: Math.min(Style.space(460), Math.max(1, panel.width - Style.gapsOut * 2))
+  readonly property int minimumCardHeight: root.cardBorderHeight + root.contentMargin * 2 + root.inputHeight
+  readonly property int cardTop: {
+    var preferred = Math.round(panel.height * 0.22)
+    var latest = Math.max(Style.gapsOut, panel.height - root.minimumCardHeight - Style.gapsOut)
+    return Math.max(Style.gapsOut, Math.min(preferred, latest))
+  }
   readonly property int cardBorderHeight: Math.ceil(Border.top(root.borderSpec) + Border.bottom(root.borderSpec))
 
   function rowHeightFor(row) {
@@ -1390,7 +1450,7 @@ Item {
   function availableRowsHeight() {
     var available = panel.height - root.cardTop - Style.gapsOut - root.cardBorderHeight
       - root.contentMargin * 2 - root.inputHeight - root.contentSpacing()
-    return Math.max(root.baseRowHeight, available)
+    return Math.max(0, available)
   }
 
   function contentSpacing() { return Style.spacing.md }
@@ -1446,7 +1506,7 @@ Item {
     BorderSurface {
       id: card
       width: root.cardWidth
-      height: Math.min(root.cardHeight, panel.height - Style.gapsOut - root.cardTop)
+      height: Math.max(1, Math.min(root.cardHeight, panel.height - Style.gapsOut - root.cardTop))
       radius: root.cornerRadius
       anchors.horizontalCenter: parent.horizontalCenter
       y: root.cardTop
@@ -1473,7 +1533,7 @@ Item {
           Text {
             text: "󰈉"
             color: root.foreground
-            opacity: 0.5
+            opacity: 0.72
             font.family: root.fontFamily
             font.pixelSize: Style.font.icon
             anchors.verticalCenter: parent.verticalCenter
@@ -1481,7 +1541,8 @@ Item {
 
           TextField {
             id: searchField
-            width: parent.width - Style.spacing.lg - Style.font.icon - hintText.width - Style.spacing.xxl
+            width: Math.max(0, parent.width - Style.spacing.lg - Style.font.icon
+              - (hintText.visible ? hintText.width + Style.spacing.xxl : 0))
             anchors.verticalCenter: parent.verticalCenter
             placeholderText: "Apps, files, math, web…"
             font.family: root.fontFamily
@@ -1489,7 +1550,7 @@ Item {
             color: root.foreground
             selectionColor: Util.alpha(root.foreground, 0.3)
             selectedTextColor: root.foreground
-            placeholderTextColor: Util.alpha(root.foreground, 0.4)
+            placeholderTextColor: Util.alpha(root.foreground, 0.72)
             leftPadding: 0
             rightPadding: 0
             topPadding: 0
@@ -1525,8 +1586,9 @@ Item {
           Text {
             id: hintText
             text: root.hintFor(root.cursorActive ? root.selectedIndex : -1)
+            visible: text.length > 0 && parent.width >= Style.space(360)
             color: root.foreground
-            opacity: 0.4
+            opacity: 0.72
             font.family: root.fontFamily
             font.pixelSize: Style.font.bodySmall
             anchors.verticalCenter: parent.verticalCenter
@@ -1556,7 +1618,7 @@ Item {
               Text {
                 text: section.toUpperCase()
                 color: root.foreground
-                opacity: 0.4
+                opacity: 0.72
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
                 font.weight: Font.DemiBold
@@ -1642,7 +1704,7 @@ Item {
                   text: row.detail
                   visible: row.detail.length > 0
                   color: row.hasCursor ? root.selectedText : root.foreground
-                  opacity: 0.55
+                  opacity: row.hasCursor ? 1.0 : 0.72
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.caption
                   elide: Text.ElideRight
@@ -1668,6 +1730,25 @@ Item {
                 }
               }
             }
+          }
+
+          Rectangle {
+            id: scrollThumb
+            visible: resultList.height > 0 && resultList.contentHeight > resultList.height + 1
+            width: Style.space(2)
+            height: visible
+              ? Math.max(Style.space(24), parent.height * resultList.visibleArea.heightRatio)
+              : 0
+            anchors.right: parent.right
+            anchors.rightMargin: Style.spacing.xxs
+            y: visible
+              ? Math.max(0, Math.min(parent.height - height,
+                  parent.height * resultList.visibleArea.yPosition))
+              : 0
+            radius: width / 2
+            color: root.foreground
+            opacity: 0.35
+            z: 10
           }
 
           Column {
