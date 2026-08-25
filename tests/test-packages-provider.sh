@@ -3,7 +3,7 @@ set -euo pipefail
 
 root=$(mktemp -d)
 trap 'rm -rf -- "$root"' EXIT
-mkdir -p "$root/bin" "$root/home"
+mkdir -p "$root/bin" "$root/home" "$root/pacman-db"
 counter=$root/pacman-calls
 printf '0\n' >"$counter"
 
@@ -18,7 +18,7 @@ EOF
 chmod +x "$root/bin/pacman"
 
 provider=${BASH_SOURCE[0]%/*}/../providers/packages
-env_args=(HOME="$root/home" XDG_CACHE_HOME="$root/cache" PACMAN_COUNTER="$counter" PATH="$root/bin:$PATH")
+env_args=(HOME="$root/home" XDG_CACHE_HOME="$root/cache" PACMAN_COUNTER="$counter" OMNIBOX_PACMAN_DB="$root/pacman-db" PATH="$root/bin:$PATH")
 first=$(env "${env_args[@]}" "$provider" probe)
 [[ $(printf '%s\n' "$first" | wc -l) -eq 8 ]]
 [[ $(cat "$counter") == 1 ]]

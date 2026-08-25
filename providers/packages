@@ -10,7 +10,7 @@ command -v pacman >/dev/null 2>&1 || exit 0
 cache_dir=${XDG_CACHE_HOME:-$HOME/.cache}/omnibox
 cache_file=$cache_dir/packages.tsv
 lock_file=$cache_dir/packages.lock
-pacman_db=/var/lib/pacman/local
+pacman_db=${OMNIBOX_PACMAN_DB:-/var/lib/pacman/local}
 umask 077
 mkdir -p -- "$cache_dir"
 chmod 700 -- "$cache_dir"
