@@ -43,6 +43,10 @@ Item {
     root.refreshDynamicSources()
     root.rebuildDisplay()
 
+    var query = root.currentQuery()
+    if (query && query.charAt(0) !== ">") searchTimer.restart()
+    else searchTimer.stop()
+
     Qt.callLater(function() { searchField.forceActiveFocus() })
   }
 
@@ -61,12 +65,29 @@ Item {
 
   function ping() { return "ok" }
 
+  function stopAsyncSearch() {
+    fdProc.latestRun += 1
+    fdProc.pending = false
+    fdProc.pendingCommand = []
+    providersProc.latestRun += 1
+    providersProc.pending = false
+    providersProc.pendingCommand = []
+    fdProc.running = false
+    providersProc.running = false
+  }
+
   function cancel() {
     root.opened = false
+    var hadQuery = searchField.text.length > 0
     searchField.text = ""
     root.selectedIndex = 0
-    if (fdProc.running) fdProc.kill()
-    if (providersProc.running) providersProc.kill()
+    searchTimer.stop()
+    if (!hadQuery) {
+      root.querySerial += 1
+      root.fileRows = []
+      root.providerRows = ({})
+      root.stopAsyncSearch()
+    }
   }
 
   // ---------------------------------------------------------------- config
@@ -301,9 +322,20 @@ Item {
   }
 
   function refreshWindows() {
-    windowsProc.command = ["hyprctl", "-j", "clients"]
+    windowsProc.latestRun += 1
+    windowsProc.pendingRun = windowsProc.latestRun
+    windowsProc.pendingCommand = ["hyprctl", "-j", "clients"]
+    windowsProc.pending = true
+    if (windowsProc.running) windowsProc.running = false
+    else root.startPendingWindows()
+  }
+
+  function startPendingWindows() {
+    if (!windowsProc.pending || windowsProc.running) return
+    windowsProc.activeRun = windowsProc.pendingRun
     windowsProc.collected = ""
-    if (windowsProc.running) windowsProc.kill()
+    windowsProc.command = windowsProc.pendingCommand
+    windowsProc.pending = false
     windowsProc.running = true
   }
 
@@ -361,6 +393,10 @@ Item {
   function runFileSearch(query) {
     if (!query) {
       root.fileRows = []
+      fdProc.latestRun += 1
+      fdProc.pending = false
+      fdProc.pendingCommand = []
+      fdProc.running = false
       return
     }
     var pattern = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -374,10 +410,28 @@ Item {
       + "timeout 1.2 fd -d 8 -E .git -E node_modules -E .cache -E Trash "
       + "-t f -t d -t l --color never -- " + Util.shellQuote(pattern) + quotedRoots
       + " 2>/dev/null | head -n 30"
-    fdProc.querySerial = root.querySerial
+    root.queueFileSearch(query, ["bash", "-lc", script])
+  }
+
+  function queueFileSearch(query, command) {
+    fdProc.latestRun += 1
+    fdProc.pendingRun = fdProc.latestRun
+    fdProc.pendingSerial = root.querySerial
+    fdProc.pendingQuery = query
+    fdProc.pendingCommand = command
+    fdProc.pending = true
+    if (fdProc.running) fdProc.running = false
+    else root.startPendingFileSearch()
+  }
+
+  function startPendingFileSearch() {
+    if (!fdProc.pending || fdProc.running) return
+    fdProc.activeRun = fdProc.pendingRun
+    fdProc.activeSerial = fdProc.pendingSerial
+    fdProc.activeQuery = fdProc.pendingQuery
     fdProc.collected = ""
-    if (fdProc.running) fdProc.kill()
-    fdProc.command = ["bash", "-lc", script]
+    fdProc.command = fdProc.pendingCommand
+    fdProc.pending = false
     fdProc.running = true
   }
 
@@ -536,6 +590,10 @@ Item {
   function runProviders(query) {
     if (!query || root.providerList.length === 0) {
       root.providerRows = ({})
+      providersProc.latestRun += 1
+      providersProc.pending = false
+      providersProc.pendingCommand = []
+      providersProc.running = false
       return
     }
     var script = "q=" + Util.shellQuote(query) + "; "
@@ -545,10 +603,28 @@ Item {
         + "| while IFS= read -r line; do [[ -n $line ]] && printf '%s\\t%s\\n' "
         + Util.shellQuote(provider.name) + " \"$line\"; done; "
     }
-    providersProc.querySerial = root.querySerial
+    root.queueProviderSearch(query, ["bash", "-lc", script])
+  }
+
+  function queueProviderSearch(query, command) {
+    providersProc.latestRun += 1
+    providersProc.pendingRun = providersProc.latestRun
+    providersProc.pendingSerial = root.querySerial
+    providersProc.pendingQuery = query
+    providersProc.pendingCommand = command
+    providersProc.pending = true
+    if (providersProc.running) providersProc.running = false
+    else root.startPendingProviderSearch()
+  }
+
+  function startPendingProviderSearch() {
+    if (!providersProc.pending || providersProc.running) return
+    providersProc.activeRun = providersProc.pendingRun
+    providersProc.activeSerial = providersProc.pendingSerial
+    providersProc.activeQuery = providersProc.pendingQuery
     providersProc.collected = ""
-    if (providersProc.running) providersProc.kill()
-    providersProc.command = ["bash", "-lc", script]
+    providersProc.command = providersProc.pendingCommand
+    providersProc.pending = false
     providersProc.running = true
   }
 
@@ -663,20 +739,21 @@ Item {
 
   function onQueryChanged() {
     root.querySerial += 1
+    root.fileRows = []
+    root.providerRows = ({})
+    root.stopAsyncSearch()
     root.selectedIndex = 0
     root.cursorActive = true
     root.rebuildDisplay()
-    searchTimer.restart()
+
+    var query = root.currentQuery()
+    if (query && query.charAt(0) !== ">") searchTimer.restart()
+    else searchTimer.stop()
   }
 
   function refreshDynamicSources() {
     root.appIconIndex = root.rebuildAppIconIndex()
     root.refreshWindows()
-    var query = root.currentQuery()
-    if (query && query.charAt(0) !== ">") {
-      root.runFileSearch(query)
-      root.runProviders(query)
-    }
   }
 
   // ------------------------------------------------------------ activation
@@ -770,11 +847,18 @@ Item {
 
   Process {
     id: windowsProc
+    property int latestRun: 0
+    property int pendingRun: 0
+    property int activeRun: 0
+    property var pendingCommand: []
+    property bool pending: false
     property string collected: ""
     stdout: SplitParser {
       onRead: function(data) { windowsProc.collected += data + "\n" }
     }
+    onRunningChanged: if (!running) Qt.callLater(function() { root.startPendingWindows() })
     onExited: {
+      if (windowsProc.activeRun !== windowsProc.latestRun) return
       try {
         var clients = JSON.parse(windowsProc.collected || "[]")
         var visible = []
@@ -796,13 +880,24 @@ Item {
 
   Process {
     id: fdProc
-    property int querySerial: 0
+    property int latestRun: 0
+    property int pendingRun: 0
+    property int activeRun: 0
+    property int pendingSerial: -1
+    property int activeSerial: -1
+    property string pendingQuery: ""
+    property string activeQuery: ""
+    property var pendingCommand: []
+    property bool pending: false
     property string collected: ""
     stdout: SplitParser {
       onRead: function(data) { fdProc.collected += data + "\n" }
     }
+    onRunningChanged: if (!running) Qt.callLater(function() { root.startPendingFileSearch() })
     onExited: {
-      if (fdProc.querySerial !== root.querySerial) return
+      if (fdProc.activeRun !== fdProc.latestRun
+          || fdProc.activeSerial !== root.querySerial
+          || fdProc.activeQuery !== root.currentQuery()) return
       var lines = fdProc.collected.split("\n")
       var paths = []
       for (var i = 0; i < lines.length; i++) {
@@ -816,13 +911,24 @@ Item {
 
   Process {
     id: providersProc
-    property int querySerial: 0
+    property int latestRun: 0
+    property int pendingRun: 0
+    property int activeRun: 0
+    property int pendingSerial: -1
+    property int activeSerial: -1
+    property string pendingQuery: ""
+    property string activeQuery: ""
+    property var pendingCommand: []
+    property bool pending: false
     property string collected: ""
     stdout: SplitParser {
       onRead: function(data) { providersProc.collected += data + "\n" }
     }
+    onRunningChanged: if (!running) Qt.callLater(function() { root.startPendingProviderSearch() })
     onExited: {
-      if (providersProc.querySerial !== root.querySerial) return
+      if (providersProc.activeRun !== providersProc.latestRun
+          || providersProc.activeSerial !== root.querySerial
+          || providersProc.activeQuery !== root.currentQuery()) return
       var next = ({})
       var lines = providersProc.collected.split("\n")
       for (var i = 0; i < lines.length; i++) {
