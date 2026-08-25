@@ -41,7 +41,7 @@ Item {
     searchField.text = String(payload.query || "")
     searchField.cursorPosition = searchField.text.length
     root.refreshDynamicSources()
-    root.rebuildDisplay()
+    root.rebuildDisplay(false)
 
     var query = root.currentQuery()
     if (query && query.charAt(0) !== ">") searchTimer.restart()
@@ -150,31 +150,123 @@ Item {
     return Math.min(18, Math.round(4 * Math.log(count + 1) / Math.LN2))
   }
 
-  function recordUsage(row) {
-    if (!row || !row.rowKey) return
-    // Transient targets change meaning (window addresses, clipboard
-    // indexes), so favorites only resurrect rows whose data stays true.
-    var learnable = row.source !== "calc" && row.source !== "windows"
-      && (row.kind === "app" || row.kind === "exec" || row.kind === "file"
-      || row.kind === "copy" || row.source === "system" || row.source === "ssh"
-      || row.source === "web" || row.source === "providers")
-    if (!learnable) return
+  function isLearnableUsageRow(row) {
+    if (!row) return false
+    if (row.source === "apps") return row.kind === "app"
+    if (row.source === "files") return row.kind === "file"
+    if (row.source === "system" || row.source === "ssh") return row.kind === "exec"
+    return false
+  }
 
-    var entry = root.usage[row.rowKey] || { count: 0, row: {} }
+  function systemSpec(id) {
+    for (var i = 0; i < root.systemRows.length; i++)
+      if (root.systemRows[i].id === id) return root.systemRows[i]
+    return null
+  }
+
+  function isSafeSshHost(host) {
+    return /^[A-Za-z0-9][A-Za-z0-9._:-]*$/.test(String(host || ""))
+  }
+
+  function usageIdentity(row, fallbackKey) {
+    var key = String((row && row.rowKey) || fallbackKey || "")
+    if (!row) return ""
+    if (row.source === "apps") return String(row.payload !== undefined ? row.payload : row.data || "")
+    if (row.source === "files") {
+      var path = String(row.payload !== undefined ? row.payload : row.data || "")
+      return path.charAt(0) === "/" ? path : ""
+    }
+    if (row.source === "system") {
+      var systemId = key.indexOf("sys:") === 0 ? key.slice(4) : ""
+      return root.systemSpec(systemId) ? systemId : ""
+    }
+    if (row.source === "ssh") {
+      var host = key.indexOf("ssh:") === 0 ? key.slice(4) : ""
+      return root.isSafeSshHost(host) ? host : ""
+    }
+    return ""
+  }
+
+  function usageKey(source, identity) {
+    if (source === "apps") return "app:" + identity
+    if (source === "files") return "file:" + identity
+    if (source === "system") return "sys:" + identity
+    if (source === "ssh") return "ssh:" + identity
+    return ""
+  }
+
+  function sanitizeUsage(value) {
+    var next = ({})
+    if (!value || typeof value !== "object") return next
+    for (var key in value) {
+      var entry = value[key]
+      var row = entry && entry.row
+      if (!entry || !row || !root.isLearnableUsageRow(row)) continue
+      var source = String(row.source || "")
+      var identity = root.usageIdentity(row, key)
+      var canonicalKey = root.usageKey(source, identity)
+      if (!identity || !canonicalKey) continue
+      var count = Number(entry.count)
+      var lastUsed = Number(entry.lastUsed)
+      next[canonicalKey] = {
+        count: isFinite(count) && count > 0 ? count : 1,
+        lastUsed: isFinite(lastUsed) && lastUsed > 0 ? lastUsed : 0,
+        row: {
+          rowKey: canonicalKey,
+          source: source,
+          icon: String(row.icon || ""),
+          appIcon: String(row.appIcon || ""),
+          label: String(row.label || ""),
+          detail: String(row.detail || ""),
+          kind: source === "apps" ? "app" : (source === "files" ? "file" : "exec"),
+          data: identity
+        }
+      }
+    }
+    return next
+  }
+
+  function loadUsage(raw) {
+    try {
+      var parsed = JSON.parse(String(raw || "{}"))
+      root.usage = root.sanitizeUsage(parsed)
+      // Rewrites legacy state atomically, removes executable history, and
+      // migrates the directory/file to 0700/0600.
+      root.saveUsage()
+    } catch (e) {
+      root.usage = ({})
+      console.warn("omnibox: refusing to overwrite invalid usage state:", e)
+    }
+  }
+
+  function recordUsage(row) {
+    if (!row || !row.rowKey || !root.isLearnableUsageRow(row)) return
+    var identity = root.usageIdentity(row, row.rowKey)
+    var canonicalKey = root.usageKey(row.source, identity)
+    if (!identity || !canonicalKey) return
+
+    var entry = root.usage[canonicalKey] || { count: 0, row: {} }
     entry.count = (Number(entry.count) || 0) + 1
     entry.lastUsed = Date.now()
     entry.row = {
-      rowKey: row.rowKey,
+      rowKey: canonicalKey,
       source: row.source,
       icon: row.icon,
       appIcon: row.appIcon,
       label: row.label,
       detail: row.detail,
-      kind: row.kind,
-      data: row.payload
+      kind: row.source === "apps" ? "app" : (row.source === "files" ? "file" : "exec"),
+      data: identity
     }
-    root.usage[row.rowKey] = entry
+    root.usage[canonicalKey] = entry
     root.saveUsage()
+  }
+
+  function usageWriterPath() {
+    var sourceDir = root.manifest && root.manifest.__sourceDir
+      ? String(root.manifest.__sourceDir)
+      : Quickshell.env("HOME") + "/.config/omarchy/plugins/ryan.omnibox"
+    return sourceDir + "/bin/write-usage"
   }
 
   function saveUsage() {
@@ -186,19 +278,57 @@ Item {
       })
       for (var i = 0; i < keys.length - 400; i++) delete root.usage[keys[i]]
     }
-    usageView.setText(JSON.stringify(root.usage))
+    root.queueUsageWrite(JSON.stringify(root.usage))
+  }
+
+  function queueUsageWrite(payload) {
+    usageWriterProc.pendingPayload = String(payload || "{}")
+    usageWriterProc.pending = true
+    if (!usageWriterProc.running) root.startUsageWrite()
+  }
+
+  function startUsageWrite() {
+    if (!usageWriterProc.pending || usageWriterProc.running) return
+    usageWriterProc.activePayload = usageWriterProc.pendingPayload
+    usageWriterProc.pending = false
+    usageWriterProc.command = [root.usageWriterPath(), root.usagePath]
+    usageWriterProc.running = true
+  }
+
+  function restoreUsageRow(entry, key) {
+    var saved = entry && entry.row
+    if (!saved) return null
+    var source = String(saved.source || "")
+    var identity = String(saved.data || "")
+    var canonicalKey = root.usageKey(source, identity)
+    if (!identity || !canonicalKey || canonicalKey !== key) return null
+
+    var row
+    if (source === "apps") {
+      row = root.makeRow("apps", String(saved.icon || ""), String(saved.appIcon || ""),
+        String(saved.label || identity), String(saved.detail || ""), "app", identity, canonicalKey)
+    } else if (source === "files" && identity.charAt(0) === "/") {
+      row = root.makeRow("files", String(saved.icon || "󰈗"), "",
+        String(saved.label || identity), String(saved.detail || ""), "file", identity, canonicalKey)
+    } else if (source === "system") {
+      var spec = root.systemSpec(identity)
+      if (!spec) return null
+      row = root.makeRow("system", spec.icon, "", spec.label, "", "exec", spec.action, canonicalKey)
+    } else if (source === "ssh" && root.isSafeSshHost(identity)) {
+      row = root.makeRow("ssh", "󰣀", "", "SSH " + identity, "Open terminal session",
+        "exec", "xdg-terminal-exec -- ssh -- " + Util.shellQuote(identity), canonicalKey)
+    } else {
+      return null
+    }
+    row.score = -(Number(entry.count) || 0)
+    return row
   }
 
   function favoriteRows() {
     var rows = []
     for (var key in root.usage) {
-      var entry = root.usage[key]
-      if (!entry || !entry.row || !entry.row.label) continue
-      var row = root.makeRow(entry.row.source, entry.row.icon, "", entry.row.label,
-        entry.row.detail || "", entry.row.kind, entry.row.data || "", entry.row.rowKey || key)
-      row.appIcon = entry.row.appIcon || ""
-      row.score = -(Number(entry.count) || 0)
-      rows.push(row)
+      var row = root.restoreUsageRow(root.usage[key], key)
+      if (row) rows.push(row)
     }
     rows.sort(function(a, b) { return a.score - b.score })
     return rows.slice(0, root.configMaxResults() + 1)
@@ -245,6 +375,16 @@ Item {
       rowKey: rowKey,
       score: 0
     }
+  }
+
+  // Stable row identity for content whose positional index changes between
+  // asynchronous rebuilds. This is not a security hash.
+  function stableHash(value) {
+    var text = String(value || "")
+    var hash = 5381
+    for (var i = 0; i < text.length; i++)
+      hash = ((hash << 5) + hash) ^ text.charCodeAt(i)
+    return (hash >>> 0).toString(16) + "-" + text.length
   }
 
   function searchTextFor(query) {
@@ -525,10 +665,11 @@ Item {
     var max = root.configMaxResults()
     for (var i = 0; i < root.sshHosts.length; i++) {
       var host = root.sshHosts[i]
+      if (!root.isSafeSshHost(host)) continue
       var score = Fuzzy.score(query, host)
       if (score === null) continue
       var row = root.makeRow("ssh", "󰣀", "", "SSH " + host, "Open terminal session",
-        "exec", "xdg-terminal-exec -- ssh " + Util.shellQuote(host), "ssh:" + host)
+        "exec", "xdg-terminal-exec -- ssh -- " + Util.shellQuote(host), "ssh:" + host)
       row.score = score + 4 - root.usageBoost(row.rowKey)
       rows.push(row)
       if (rows.length >= max) break
@@ -550,10 +691,10 @@ Item {
         row = root.makeRow("clipboard", "󰋩", "", entry.label, "Image — copy again",
           "exec", root.omarchyPath + "/bin/omarchy-clipboard-paste-file --copy-only "
             + Util.shellQuote(entry.mime) + " " + Util.shellQuote(entry.data),
-          "clip:" + i)
+          "clip:" + entry.stableKey)
       } else {
         row = root.makeRow("clipboard", "", "", entry.label, "Paste",
-          "clipboard", String(entry.index), "clip:" + i)
+          "clipboard", String(entry.index), "clip:" + entry.stableKey)
       }
       row.score = score + 6
       rows.push(row)
@@ -638,7 +779,8 @@ Item {
       for (var j = 0; j < batch.length && rows.length < max; j++) {
         var parsed = batch[j]
         var row = root.makeRow("providers", parsed.icon || "󰐢", "", parsed.label,
-          parsed.detail || name, "exec", parsed.action, "prov:" + name + ":" + parsed.label)
+          parsed.detail || name, "exec", parsed.action,
+          "prov:" + name + ":" + root.stableHash(parsed.label + "\u0000" + parsed.detail + "\u0000" + parsed.action))
         row.score = 60 + j * 2 - root.usageBoost(row.rowKey)
         rows.push(row)
       }
@@ -661,7 +803,14 @@ Item {
     return searchField.text.trim()
   }
 
-  function rebuildDisplay() {
+  function rebuildDisplay(preserveSelection) {
+    var shouldPreserve = preserveSelection !== false
+    var fallbackIndex = root.selectedIndex
+    var selectedKey = ""
+    if (shouldPreserve && fallbackIndex >= 0 && fallbackIndex < displayModel.count)
+      selectedKey = String(displayModel.get(fallbackIndex).rowKey || "")
+
+    root.disarmPointer()
     displayModel.clear()
 
     var query = root.currentQuery()
@@ -728,9 +877,21 @@ Item {
     }
 
     layoutSerial += 1
+
+    var restoredIndex = -1
+    if (shouldPreserve && selectedKey) {
+      for (var r = 0; r < displayModel.count; r++) {
+        if (String(displayModel.get(r).rowKey || "") === selectedKey) {
+          restoredIndex = r
+          break
+        }
+      }
+    }
+
     if (displayModel.count === 0) root.selectedIndex = 0
-    else if (root.selectedIndex >= displayModel.count) root.selectedIndex = displayModel.count - 1
-    else if (root.selectedIndex < 0) root.selectedIndex = 0
+    else if (restoredIndex >= 0) root.selectedIndex = restoredIndex
+    else if (!shouldPreserve) root.selectedIndex = 0
+    else root.selectedIndex = Math.max(0, Math.min(fallbackIndex, displayModel.count - 1))
 
     Qt.callLater(function() {
       if (displayModel.count > 0) root.revealCursor()
@@ -744,7 +905,7 @@ Item {
     root.stopAsyncSearch()
     root.selectedIndex = 0
     root.cursorActive = true
-    root.rebuildDisplay()
+    root.rebuildDisplay(false)
 
     var query = root.currentQuery()
     if (query && query.charAt(0) !== ">") searchTimer.restart()
@@ -770,14 +931,26 @@ Item {
     return ""
   }
 
+  function disarmPointer() {
+    pointerGate.reset()
+  }
+
+  function selectFromPointer(index, item, mouse) {
+    if (!pointerGate.moved(item, mouse)) return
+    root.cursorActive = true
+    root.selectedIndex = index
+  }
+
   function select(delta) {
     if (displayModel.count === 0) return
     var step = Number(delta)
     if (!isFinite(step) || step === 0) return
+    root.disarmPointer()
     root.cursorActive = true
     root.selectedIndex = ((root.selectedIndex + step) % displayModel.count + displayModel.count) % displayModel.count
     Qt.callLater(function() { root.revealCursor() })
   }
+
 
 
   function revealCursor() {
@@ -1013,16 +1186,26 @@ Item {
     onFileChanged: reload()
   }
 
+  Process {
+    id: usageWriterProc
+    property string pendingPayload: ""
+    property string activePayload: ""
+    property bool pending: false
+    stdinEnabled: true
+    onStarted: usageWriterProc.write(usageWriterProc.activePayload + "\n")
+    onRunningChanged: if (!running) Qt.callLater(function() { root.startUsageWrite() })
+    onExited: function(exitCode, exitStatus) {
+      if (exitCode !== 0 || exitStatus !== 0)
+        console.warn("omnibox: secure usage write failed:", exitCode, exitStatus)
+    }
+  }
+
   FileView {
     id: usageView
     path: root.usagePath
     printErrors: false
-    onLoaded: {
-      try {
-        var parsed = JSON.parse(text())
-        root.usage = (parsed && typeof parsed === "object") ? parsed : ({})
-      } catch (e) { root.usage = ({}) }
-    }
+    onLoaded: root.loadUsage(text())
+    onLoadFailed: { root.usage = ({}) }
   }
 
   FileView {
@@ -1079,11 +1262,13 @@ Item {
         var item = history[i]
         if (!item) continue
         if (item.type === "text") {
-          var text = String(item.text || "").replace(/\s+/g, " ").trim()
+          var rawText = String(item.text || "")
+          var text = rawText.replace(/\s+/g, " ").trim()
           if (!text) continue
           entries.push({
             index: i,
             type: "text",
+            stableKey: "text:" + root.stableHash(rawText),
             searchText: text,
             label: text.length > 90 ? text.slice(0, 90) + "…" : text,
             mime: "",
@@ -1096,6 +1281,7 @@ Item {
           entries.push({
             index: i,
             type: "image",
+            stableKey: "image:" + root.stableHash(path + "\u0000" + String(item.mime || "image/png")),
             searchText: base,
             label: "Image · " + base,
             mime: String(item.mime || "image/png"),
@@ -1183,6 +1369,11 @@ Item {
 
   property int cardHeight: root.cardBorderHeight + root.contentMargin * 2
     + root.inputHeight + root.contentSpacing() + root.rowsHeight(layoutSerial)
+
+  PointerMoveGate {
+    id: pointerGate
+    referenceItem: card
+  }
 
   PanelWindow {
     id: panel
@@ -1411,10 +1602,17 @@ Item {
               }
 
               MouseArea {
+                id: mouseArea
                 anchors.fill: parent
                 hoverEnabled: true
                 cursorShape: Qt.PointingHandCursor
-                onEntered: { root.cursorActive = true; root.selectedIndex = row.index }
+                onEntered: root.selectFromPointer(row.index, row, {
+                  x: mouseArea.mouseX,
+                  y: mouseArea.mouseY
+                })
+                onPositionChanged: function(mouse) {
+                  root.selectFromPointer(row.index, row, mouse)
+                }
                 onClicked: {
                   root.cursorActive = true
                   root.selectedIndex = row.index

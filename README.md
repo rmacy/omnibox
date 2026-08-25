@@ -20,9 +20,11 @@ ranked results from ten sources as you type:
 | **SSH** | Hosts from `~/.ssh/config`; Enter opens an `ssh` session in your terminal |
 | **Providers** | Executable extensions that answer the query with TSV rows (see below) |
 
-Omnibox also **learns**: every activation is counted, and frequently used
-results float to the top. Open the box with an empty query to see your
-recents/favorites.
+Omnibox also **learns stable targets**: frequently used apps, files, system
+actions, and SSH hosts float to the top. Shell commands, provider actions,
+clipboard entries, calculations, and web queries are never persisted. Usage
+state is stored atomically with mode `0600`. Open the box with an empty query
+to see your favorites.
 
 The stock Omarchy menu is untouched — every `omarchy menu toggle <route>`
 (system, capture, theme, setup, …) keeps working, and Omnibox links into it.
