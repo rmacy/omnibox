@@ -695,10 +695,13 @@ Item {
 
   function select(delta) {
     if (displayModel.count === 0) return
+    var step = Number(delta)
+    if (!isFinite(step) || step === 0) return
     root.cursorActive = true
-    root.selectedIndex = (root.selectedIndex + delta + displayModel.count) % displayModel.count
-    root.revealCursor()
+    root.selectedIndex = ((root.selectedIndex + step) % displayModel.count + displayModel.count) % displayModel.count
+    Qt.callLater(function() { root.revealCursor() })
   }
+
 
   function revealCursor() {
     resultList.positionViewAtIndex(root.selectedIndex, ListView.Contain)
@@ -1026,52 +1029,54 @@ Item {
   readonly property int cornerRadius: Style.cornerRadius
   property string fontFamily: Style.font.menuFamily
 
-  property int contentMargin: Style.spacing.panelPadding
-  property int baseRowHeight: Math.max(Style.space(50), Style.font.body + Style.spacing.rowPaddingX * 2)
-  property int detailRowHeight: Math.max(Style.space(58), Style.font.body + Style.font.caption + Style.spacing.rowPaddingX * 2)
-  property int rowSpacing: Style.spacing.xs
-  property int inputHeight: Style.space(56)
-  property int rowPeek: Math.round(baseRowHeight * 0.55)
+  property int contentMargin: Style.spacing.popupPadding
+  property int baseRowHeight: Math.max(Style.space(38), Style.font.title + Style.spacing.controlPaddingY * 2)
+  property int detailRowHeight: Math.max(Style.space(46),
+    Style.font.title + Style.font.caption + Style.space(3) + Style.spacing.controlPaddingY * 2)
+  property int rowSpacing: Style.spacing.xxs
+  property int inputHeight: Style.space(44)
+  property int sectionHeight: Style.space(18)
+  property int maxRowsHeight: Style.space(420)
   property int layoutSerial: 0
 
   property int cardWidth: Style.space(460)
   readonly property int cardTop: Math.round(panel.height * 0.22)
+  readonly property int cardBorderHeight: Math.ceil(Border.top(root.borderSpec) + Border.bottom(root.borderSpec))
 
   function rowHeightFor(row) {
     return row.detail ? root.detailRowHeight : root.baseRowHeight
   }
 
   function availableRowsHeight() {
-    var available = panel.height - root.cardTop - Style.gapsOut - root.contentMargin * 2
-      - root.inputHeight - root.contentSpacing()
-    return Math.max(root.baseRowHeight, Math.min(available, Math.round(panel.height * 0.6)))
+    var available = panel.height - root.cardTop - Style.gapsOut - root.cardBorderHeight
+      - root.contentMargin * 2 - root.inputHeight - root.contentSpacing()
+    return Math.max(root.baseRowHeight, available)
   }
 
   function contentSpacing() { return Style.spacing.md }
 
-  function rowsHeight(_serial) {
+  function naturalRowsHeight(_serial) {
     if (displayModel.count === 0) return root.baseRowHeight
-    var totals = []
     var total = 0
-    var available = root.availableRowsHeight()
     for (var i = 0; i < displayModel.count; i++) {
       var row = displayModel.get(i)
       if (i > 0) total += root.rowSpacing
-      if (row.section) total += Style.space(22)
+      if (row.section) total += root.sectionHeight
       total += root.rowHeightFor(row)
-      totals.push(total)
     }
-    var count = totals.length
-    if (totals[count - 1] <= available) return totals[count - 1]
-
-    var full = 0
-    while (full < count && totals[full] <= available) full++
-    while (full > 1 && totals[full - 1] + root.rowSpacing + root.rowPeek > available) full--
-    if (full < 1) return Math.max(available, root.baseRowHeight)
-    return totals[full - 1] + root.rowSpacing + root.rowPeek
+    return total
   }
 
-  property int cardHeight: root.contentMargin * 2 + root.inputHeight + root.contentSpacing() + root.rowsHeight(layoutSerial)
+  function rowsHeight(_serial) {
+    return Math.min(
+      root.naturalRowsHeight(layoutSerial),
+      root.maxRowsHeight,
+      root.availableRowsHeight()
+    )
+  }
+
+  property int cardHeight: root.cardBorderHeight + root.contentMargin * 2
+    + root.inputHeight + root.contentSpacing() + root.rowsHeight(layoutSerial)
 
   PanelWindow {
     id: panel
@@ -1103,6 +1108,7 @@ Item {
       color: root.background
       borderSpec: root.borderSpec
       padding: root.contentMargin
+      clip: true
 
       MouseArea { anchors.fill: parent; onClicked: {} }
 
@@ -1117,20 +1123,20 @@ Item {
         Row {
           width: parent.width
           height: root.inputHeight
-          spacing: Style.space(10)
+          spacing: Style.spacing.lg
 
           Text {
             text: "󰈉"
             color: root.foreground
-            opacity: 0.55
+            opacity: 0.5
             font.family: root.fontFamily
-            font.pixelSize: Style.font.iconLarge
+            font.pixelSize: Style.font.icon
             anchors.verticalCenter: parent.verticalCenter
           }
 
           TextField {
             id: searchField
-            width: parent.width - Style.space(10) - Style.font.iconLarge - hintText.width - Style.space(20)
+            width: parent.width - Style.spacing.lg - Style.font.icon - hintText.width - Style.spacing.xxl
             anchors.verticalCenter: parent.verticalCenter
             placeholderText: "Apps, files, math, web…"
             font.family: root.fontFamily
@@ -1199,18 +1205,18 @@ Item {
             section.delegate: Item {
               required property string section
               width: ListView.view.width
-              height: Style.space(22)
-              visible: section !== ""
+              height: section.length > 0 ? root.sectionHeight : 0
+              visible: section.length > 0
 
               Text {
                 text: section.toUpperCase()
                 color: root.foreground
                 opacity: 0.4
                 font.family: root.fontFamily
-                font.pixelSize: Style.font.bodySmall
+                font.pixelSize: Style.font.caption
                 font.weight: Font.DemiBold
                 anchors.left: parent.left
-                anchors.leftMargin: Style.space(8)
+                anchors.leftMargin: Style.spacing.md
                 anchors.verticalCenter: parent.verticalCenter
               }
             }
@@ -1243,11 +1249,11 @@ Item {
                 color: row.hasCursor ? root.selectedText : root.foreground
                 font.family: row.iconFont.length > 0 ? row.iconFont : root.fontFamily
                 font.pixelSize: Style.font.iconLarge
-                width: Style.space(36)
+                width: Style.space(30)
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
                 anchors.left: parent.left
-                anchors.leftMargin: Style.space(8)
+                anchors.leftMargin: Style.spacing.md
                 anchors.verticalCenter: parent.verticalCenter
               }
 
@@ -1262,7 +1268,7 @@ Item {
                 source: row.appIcon
                 asynchronous: true
                 anchors.left: parent.left
-                anchors.leftMargin: Style.space(8) + (Style.space(36) - width) / 2
+                anchors.leftMargin: Style.spacing.md + (Style.space(30) - width) / 2
                 anchors.verticalCenter: parent.verticalCenter
               }
 
@@ -1270,18 +1276,18 @@ Item {
                 anchors.left: (row.icon.length > 0 || row.appIcon.length > 0)
                   ? parent.left : parent.left
                 anchors.leftMargin: (row.icon.length > 0 || row.appIcon.length > 0)
-                  ? Style.space(52) : Style.space(14)
+                  ? Style.space(42) : Style.spacing.xxl
                 anchors.right: parent.right
-                anchors.rightMargin: Style.space(14)
+                anchors.rightMargin: Style.spacing.xl
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: Style.space(3)
+                spacing: Style.spacing.xxs
 
                 Text {
                   width: parent.width
                   text: row.label
                   color: row.hasCursor ? root.selectedText : root.foreground
                   font.family: root.fontFamily
-                  font.pixelSize: Style.font.heading
+                  font.pixelSize: Style.font.title
                   font.weight: Font.Medium
                   elide: Text.ElideRight
                 }
@@ -1291,9 +1297,9 @@ Item {
                   text: row.detail
                   visible: row.detail.length > 0
                   color: row.hasCursor ? root.selectedText : root.foreground
-                  opacity: 0.52
+                  opacity: 0.55
                   font.family: root.fontFamily
-                  font.pixelSize: Style.font.bodySmall
+                  font.pixelSize: Style.font.caption
                   elide: Text.ElideRight
                 }
               }
