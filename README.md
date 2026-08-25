@@ -145,19 +145,19 @@ Providers run concurrently on every debounced query. Each gets 0.9 seconds,
 then a 0.2-second SIGKILL grace; output is capped to 8 rows and 16 KiB per
 line. Completed providers stream into the launcher immediately, then all
 provider rows are fuzzy-ranked together before `maxResults` is applied. Keep
-providers fast. The shipped `packages` example searches installed packages:
+providers fast. Minimal example:
 
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-q="${1:-}"
+q=${1:-}
 [[ -n $q ]] || exit 0
-pacman -Q 2>/dev/null | awk -v q="$q" '
-  index(tolower($1), tolower(q)) {
-    printf "%s\t%s · installed\txdg-terminal-exec -- bash -lc \047pacman -Qi %s; read -n 1 -s\047\t󰣇\n", $1, $2, $1
-    if (++n >= 8) exit
-  }'
+printf 'Search notes for %s\tPersonal notes\tmy-notes-search %q\t󰈙\n' \"$q\" \"$q\"
 ```
+
+The shipped `providers/packages` provider searches installed packages from a
+mode-`0600` cache. It refreshes that cache only when pacman’s local database
+changes, rather than running `pacman -Q` for every keystroke.
 
 ## Development notes
 

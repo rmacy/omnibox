@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "ryan.omnibox",
   "name": "Omnibox",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "Ryan Macy",
   "description": "Alfred-style universal launcher: apps, files, windows, math, web search, clipboard, SSH, shell commands, and extensible providers.",
   "kinds": [

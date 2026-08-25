@@ -1,13 +1,39 @@
 #!/usr/bin/env bash
-# Omnibox provider: search installed pacman packages.
+# Omnibox provider: search a cached installed-package inventory.
 # Protocol: $1 = query; stdout rows: label<TAB>detail<TAB>action<TAB>icon
 set -euo pipefail
 
-q="${1:-}"
+q=${1:-}
 [[ -n $q ]] || exit 0
+command -v pacman >/dev/null 2>&1 || exit 0
 
-pacman -Q 2>/dev/null | awk -v q="$q" '
+cache_dir=${XDG_CACHE_HOME:-$HOME/.cache}/omnibox
+cache_file=$cache_dir/packages.tsv
+lock_file=$cache_dir/packages.lock
+pacman_db=/var/lib/pacman/local
+umask 077
+mkdir -p -- "$cache_dir"
+chmod 700 -- "$cache_dir"
+
+(
+  flock -x 9
+  if [[ ! -s $cache_file || $pacman_db -nt $cache_file ]]; then
+    tmp=$(mktemp "$cache_dir/.packages.tsv.tmp.XXXXXX")
+    trap 'rm -f -- "$tmp"' EXIT HUP INT TERM
+    if pacman -Q >"$tmp" 2>/dev/null; then
+      chmod 600 -- "$tmp"
+      mv -f -- "$tmp" "$cache_file"
+      chmod 600 -- "$cache_file"
+      trap - EXIT HUP INT TERM
+    elif [[ ! -s $cache_file ]]; then
+      exit 0
+    fi
+  fi
+) 9>"$lock_file"
+
+[[ -r $cache_file ]] || exit 0
+LC_ALL=C awk -v q="$q" '
   index(tolower($1), tolower(q)) {
     printf "%s\t%s · installed\txdg-terminal-exec -- bash -lc \047pacman -Qi %s; read -n 1 -s\047\t󰣇\n", $1, $2, $1
     if (++n >= 8) exit
-  }'
+  }' "$cache_file"

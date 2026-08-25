@@ -284,6 +284,10 @@ Item {
     return root.pluginSourceDir() + "/bin/write-usage"
   }
 
+  function fileSearchPath() {
+    return root.pluginSourceDir() + "/bin/search-files"
+  }
+
   function saveUsage() {
     var keys = []
     for (var k in root.usage) keys.push(k)
@@ -568,16 +572,12 @@ Item {
     }
     var pattern = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
     var roots = root.configFileRoots()
-    var quotedRoots = ""
+    var command = [root.fileSearchPath(), "8", "30", "1.2", "0.2", pattern]
     for (var i = 0; i < roots.length; i++) {
-      var p = root.homePath(roots[i])
-      if (p) quotedRoots += " " + Util.shellQuote(p)
+      var path = root.homePath(roots[i])
+      if (path) command.push(path)
     }
-    var script = "command -v fd >/dev/null 2>&1 || exit 0; "
-      + "timeout 1.2 fd -d 8 -E .git -E node_modules -E .cache -E Trash "
-      + "-t f -t d -t l --color never -- " + Util.shellQuote(pattern) + quotedRoots
-      + " 2>/dev/null | head -n 30"
-    root.queueFileSearch(query, ["bash", "-lc", script])
+    root.queueFileSearch(query, command)
   }
 
   function queueFileSearch(query, command) {
@@ -1246,7 +1246,7 @@ Item {
 
   Timer {
     id: searchTimer
-    interval: 130
+    interval: 220
     onTriggered: {
       var query = root.currentQuery()
       if (!query || query.charAt(0) === ">") {
@@ -1308,7 +1308,10 @@ Item {
     watchChanges: true
     printErrors: false
     onLoaded: { root.parseSshConfig(text()) }
-    onLoadFailed: { root.sshHosts = [] }
+    onLoadFailed: {
+      root.sshHosts = []
+      if (root.opened) root.rebuildDisplay()
+    }
     onFileChanged: reload()
   }
 
@@ -1335,6 +1338,7 @@ Item {
       }
     }
     root.sshHosts = hosts
+    if (root.opened) root.rebuildDisplay()
   }
 
   FileView {
@@ -1343,7 +1347,10 @@ Item {
     watchChanges: true
     printErrors: false
     onLoaded: { root.parseClipboard(text()) }
-    onLoadFailed: { root.clipEntries = [] }
+    onLoadFailed: {
+      root.clipEntries = []
+      if (root.opened) root.rebuildDisplay()
+    }
     onFileChanged: reload()
   }
 
