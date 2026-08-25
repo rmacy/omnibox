@@ -1,0 +1,28 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install fd
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fd-find
+          sudo ln -sf "$(command -v fdfind)" /usr/local/bin/fd
+      - name: Enforce 90% JS coverage
+        run: npm run coverage
+      - name: Test shell helpers
+        run: npm run test:shell
+      - name: QML smoke (skips outside Omarchy)
+        run: npm run test:qml

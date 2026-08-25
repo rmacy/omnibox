@@ -159,11 +159,25 @@ The shipped `providers/packages` provider searches installed packages from a
 mode-`0600` cache. It refreshes that cache only when pacman’s local database
 changes, rather than running `pacman -Q` for every keystroke.
 
+## Testing
+
+```bash
+npm test
+npm run coverage
+```
+
+`npm run coverage` uses pinned `c8@12.0.0` from npm’s external cache, so it
+does not put validator-forbidden dependency symlinks inside the plugin. It
+instruments every executable module in `js/` and fails if statements,
+branches, functions, or lines fall below 90%. Shell helpers have focused
+behavior tests; the QML IPC smoke suite runs on Omarchy and skips cleanly
+elsewhere. GitHub Actions enforces the same gates on pushes and pull requests.
+
 ## Development notes
 
 - Entry point: `Omnibox.qml` (`kind: "menu"`, `keepLoaded: true`).
-- Pure-JS modules in `js/` are Qt V4/ES5-compatible; tests in `tests/` run
-  under Node: `node tests/test-calc.js && node tests/test-fuzzy.js`.
+- Pure-JS modules in `js/` remain Qt V4/ES5-compatible while exposing guarded
+  CommonJS exports for Node coverage.
 - QML edits don't hot-recompile reliably inside a running shell; use
   `omarchy restart shell` while developing.
 - Window focusing uses Omarchy's Hyprland Lua dispatch

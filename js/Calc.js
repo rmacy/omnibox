@@ -520,3 +520,8 @@ function calcFormat(v) {
     while (d.length > 1 && d.charAt(d.length - 1) === '0') d = d.slice(0, d.length - 1);
     return calcBuild(d, rd.e, sign);
 }
+
+if (typeof module !== "undefined") module.exports = {
+    looksLikeMath: looksLikeMath,
+    evaluate: evaluate
+};

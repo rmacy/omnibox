@@ -430,3 +430,5 @@ function parse(raw) {
         throw jsoncParseError(error, raw);
     }
 }
+
+if (typeof module !== "undefined") module.exports = { parse: parse };

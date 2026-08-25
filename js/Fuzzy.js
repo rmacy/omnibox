@@ -262,3 +262,9 @@ function prefixMatch(query, text) {
     }
     return true;
 }
+
+if (typeof module !== "undefined") module.exports = {
+    score: score,
+    normalize: normalize,
+    prefixMatch: prefixMatch
+};

@@ -1,79 +1,119 @@
-// test-fuzzy.js — node test harness for js/Fuzzy.js (loads via new Function).
-var fs = require('fs');
-var path = require('path');
+var test = require('node:test');
+var assert = require('node:assert/strict');
 
-var src = fs.readFileSync(path.join(__dirname, '..', 'js', 'Fuzzy.js'), 'utf8');
-var F = new Function(src + '; return { score: score, normalize: normalize, prefixMatch: prefixMatch };')();
+var Fuzzy = require('../js/Fuzzy.js');
 
-var failures = 0;
-function check(name, cond) {
-    if (cond) {
-        console.log('PASS ' + name);
-    } else {
-        failures++;
-        console.log('FAIL ' + name);
+test('score exposes every scoring tier in strict rank order', function () {
+    var exact = Fuzzy.score('fb', 'fb');
+    var prefix = Fuzzy.score('fb', 'fball');
+    var boundary = Fuzzy.score('fb', 'foo bar');
+    var substring = Fuzzy.score('fb', 'xfb');
+    var subsequence = Fuzzy.score('fb', 'fxb');
+
+    assert.equal(exact, 0);
+    assert.equal(prefix, 10.5);
+    assert.equal(boundary, 29.5);
+    assert.equal(substring, 40.5);
+    assert.equal(subsequence, 72);
+    assert.ok(exact < prefix && prefix < boundary && boundary < substring && substring < subsequence);
+});
+
+test('score applies the long exact and prefix bonus without going below zero', function () {
+    assert.equal(Fuzzy.score('fire', 'fire'), 0);
+    assert.ok(Math.abs(Fuzzy.score('fire', 'firefox') - 5.7) < 0.0000001);
+    assert.ok(Math.abs(Fuzzy.score('fir', 'firefox') - 10.7) < 0.0000001);
+    assert.equal(Fuzzy.score('FIREFOX', 'firefox'), 0);
+    assert.equal(Fuzzy.score('firefox', 'FIREFOX'), 0);
+});
+
+test('score keeps the best tier when several tiers are available', function () {
+    assert.equal(Fuzzy.score('fb', 'fb bar'), 10.6);
+    assert.equal(Fuzzy.score('fb', 'foo-bar-fb'), 29.5);
+    assert.equal(Fuzzy.score('fb', 'zfb'), 40.5);
+    assert.ok(Fuzzy.score('om', 'Omarchy') < Fuzzy.score('om', 'Documents'));
+});
+
+test('score recognizes every documented word separator', function () {
+    var texts = ['foo bar', 'foo_bar', 'foo-bar', 'foo.bar', 'foo/bar'];
+    var i;
+
+    for (i = 0; i < texts.length; i++) {
+        assert.equal(Fuzzy.score('fb', texts[i]), 29.5, texts[i]);
     }
-}
+});
 
-// --- basics ---------------------------------------------------------------
-check("score('xyz','abc') === null", F.score('xyz', 'abc') === null);
-check("score('','anything') === 0", F.score('', 'anything') === 0);
-check("score('','') === 0", F.score('', '') === 0);
-check("score('a','') === null", F.score('a', '') === null);
+test('score recognizes lowercase-to-uppercase camel boundaries from original case', function () {
+    assert.equal(Fuzzy.score('fb', 'fooBar'), 28);
+    assert.equal(Fuzzy.score('om', 'otherMenu'), 31);
+    assert.equal(Fuzzy.score('FB', 'fooBar'), 28);
+});
 
-// --- strict tier ordering: each text makes exactly one tier reachable ------
-var sExact = F.score('fb', 'fb');
-var sPrefix = F.score('fb', 'fball');
-var sBoundary = F.score('fb', 'foo bar');
-var sSubstring = F.score('fb', 'xfb');
-var sSubseq = F.score('fb', 'fxb');
-check("tier chain non-null", sExact !== null && sPrefix !== null &&
-    sBoundary !== null && sSubstring !== null && sSubseq !== null);
-check("exact(0) < prefix < boundary < substring < subsequence: " +
-    [sExact, sPrefix, sBoundary, sSubstring, sSubseq].join(','),
-    sExact < sPrefix && sPrefix < sBoundary && sBoundary < sSubstring && sSubstring < sSubseq);
+test('score splits query terms on spaces, tabs, newlines, and carriage returns', function () {
+    assert.equal(Fuzzy.score('web\tbrow\nser\r', 'Web Browser'),
+        Fuzzy.score('web', 'Web Browser') +
+        Fuzzy.score('brow', 'Web Browser') +
+        Fuzzy.score('ser', 'Web Browser'));
+    assert.equal(Fuzzy.score(' \t\n\r ', 'anything'), 0);
+});
 
-// 'fire' examples: exact < prefix < substring; subsequence 'fr' worse than prefix 'fi'
-check("score('fire','fire') === 0 (exact, bonus floored)", F.score('fire', 'fire') === 0);
-check("score('fire','fire') < score('fire','firefox')",
-    F.score('fire', 'fire') < F.score('fire', 'firefox'));
-check("score('fire','firefox') < score('fire','campfire')",
-    F.score('fire', 'firefox') < F.score('fire', 'campfire'));
-check("score('fr','firefox') > score('fi','firefox') (subsequence worse than prefix)",
-    F.score('fr', 'firefox') > F.score('fi', 'firefox'));
+test('score requires every term and sums successful term scores', function () {
+    var web = Fuzzy.score('web', 'Web Browser');
+    var brow = Fuzzy.score('brow', 'Web Browser');
 
-// --- word boundary beats substring/subsequence ------------------------------
-var gcChrome = F.score('gc', 'Google Chrome');
-var gcLegacies = F.score('gc', 'legacies');
-check("score('gc','Google Chrome') non-null", gcChrome !== null);
-check("score('gc','legacies') non-null", gcLegacies !== null);
-check("boundary('gc','Google Chrome') < subseq('gc','legacies'): " + gcChrome + ' < ' + gcLegacies,
-    gcChrome < gcLegacies);
-check("camel-hump alignment: score('oM','omarchyMenu') non-null",
-    F.score('oM', 'omarchyMenu') !== null);
+    assert.equal(Fuzzy.score('web brow', 'Web Browser'), web + brow);
+    assert.equal(Fuzzy.score('web zzz', 'Web Browser'), null);
+    assert.equal(Fuzzy.score('zzz web', 'Web Browser'), null);
+});
 
-// --- multi-term AND ----------------------------------------------------------
-check("score('web brow','Web Browser') non-null", F.score('web brow', 'Web Browser') !== null);
-check("score('web zzz','Web Browser') === null", F.score('web zzz', 'Web Browser') === null);
+test('score accepts distant subsequences but rejects absent and out-of-order terms', function () {
+    assert.equal(Fuzzy.score('abc', 'a111b111c'), 82);
+    assert.equal(Fuzzy.score('xyz', 'abc'), null);
+    assert.equal(Fuzzy.score('ba', 'abc'), null);
+});
 
-// --- case-insensitive exact --------------------------------------------------
-check("score('FIREFOX','firefox') === 0", F.score('FIREFOX', 'firefox') === 0);
-check("score('firefox','FIREFOX') === 0", F.score('firefox', 'FIREFOX') === 0);
+test('score coerces non-string query and text inputs to empty strings', function () {
+    assert.equal(Fuzzy.score(null, 'abc'), 0);
+    assert.equal(Fuzzy.score(42, 'abc'), 0);
+    assert.equal(Fuzzy.score('a', null), null);
+    assert.equal(Fuzzy.score('a', { value: 'abc' }), null);
+});
 
-// --- normalize ----------------------------------------------------------------
-check("normalize('  Hello   World ') === 'hello world'",
-    F.normalize('  Hello   World ') === 'hello world');
+test('score handles empty query and text combinations', function () {
+    assert.equal(Fuzzy.score('', 'anything'), 0);
+    assert.equal(Fuzzy.score('', ''), 0);
+    assert.equal(Fuzzy.score('a', ''), null);
+});
 
-// --- prefixMatch prefilter ------------------------------------------------------
-check("prefixMatch('fi fo','Firefox Focus') === true",
-    F.prefixMatch('fi fo', 'Firefox Focus') === true);
-check("prefixMatch('fi zz','Firefox Focus') === false",
-    F.prefixMatch('fi zz', 'Firefox Focus') === false);
+test('normalize lowercases, trims, and collapses every supported whitespace type', function () {
+    assert.equal(Fuzzy.normalize('  Hello\t\tWORLD\nNext\rLine  '), 'hello world next line');
+    assert.equal(Fuzzy.normalize('Already-Normal'), 'already-normal');
+    assert.equal(Fuzzy.normalize(''), '');
+    assert.equal(Fuzzy.normalize(' \t\n\r '), '');
+});
 
-// --- sanity ranking ---------------------------------------------------------------
-check("score('om','Omarchy') < score('om','Documents'): " +
-    F.score('om', 'Omarchy') + ' < ' + F.score('om', 'Documents'),
-    F.score('om', 'Omarchy') < F.score('om', 'Documents'));
+test('normalize returns empty text for non-string values', function () {
+    assert.equal(Fuzzy.normalize(null), '');
+    assert.equal(Fuzzy.normalize(17), '');
+    assert.equal(Fuzzy.normalize({ toString: function () { return 'unused'; } }), '');
+});
 
-console.log(failures === 0 ? 'ALL PASS' : failures + ' FAILURE(S)');
-process.exit(failures === 0 ? 0 : 1);
+test('prefixMatch finds case-insensitive prefixes across words and terms', function () {
+    assert.equal(Fuzzy.prefixMatch('fi fo', 'Firefox Focus'), true);
+    assert.equal(Fuzzy.prefixMatch('FO fi', 'Firefox Focus'), true);
+    assert.equal(Fuzzy.prefixMatch('fire fox', 'Firefox Foxglove'), true);
+    assert.equal(Fuzzy.prefixMatch('fi fi', 'Firefox'), true);
+});
+
+test('prefixMatch rejects a missing prefix, empty text, and non-prefix substrings', function () {
+    assert.equal(Fuzzy.prefixMatch('fi zz', 'Firefox Focus'), false);
+    assert.equal(Fuzzy.prefixMatch('ire', 'Firefox'), false);
+    assert.equal(Fuzzy.prefixMatch('fi', ''), false);
+    assert.equal(Fuzzy.prefixMatch('fi', null), false);
+});
+
+test('prefixMatch handles whitespace splitting, empty queries, and non-string queries', function () {
+    assert.equal(Fuzzy.prefixMatch(' fi\tfo\n', 'Firefox\rFocus'), true);
+    assert.equal(Fuzzy.prefixMatch('', ''), true);
+    assert.equal(Fuzzy.prefixMatch(' \t\n\r ', 12), true);
+    assert.equal(Fuzzy.prefixMatch(null, 'Firefox'), true);
+});
