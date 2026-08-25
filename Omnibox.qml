@@ -277,7 +277,7 @@ Item {
   function pluginSourceDir() {
     return root.manifest && root.manifest.__sourceDir
       ? String(root.manifest.__sourceDir)
-      : Quickshell.env("HOME") + "/.config/omarchy/plugins/ryan.omnibox"
+      : Quickshell.env("HOME") + "/.config/omarchy/plugins/bitr0t.omnibox"
   }
 
   function usageWriterPath() {

@@ -42,7 +42,7 @@ Then bind a key. Add to `~/.config/hypr/bindings.lua`:
 
 ```lua
 hl.unbind("SUPER + SPACE")
-o.bind("SUPER + SPACE", "Omnibox launcher", "omarchy-shell shell toggle ryan.omnibox")
+o.bind("SUPER + SPACE", "Omnibox launcher", "omarchy-shell shell toggle bitr0t.omnibox")
 ```
 
 Hyprland reloads bindings on save. If Super+Space still opens the stock menu
@@ -52,13 +52,13 @@ table is rebuilt at session start.
 Manual summon from anywhere:
 
 ```bash
-omarchy-shell shell summon ryan.omnibox '{"query":"ghost"}'
+omarchy-shell shell summon bitr0t.omnibox '{"query":"ghost"}'
 ```
 
 ### Update
 
 ```bash
-omarchy plugin update ryan.omnibox
+omarchy plugin update bitr0t.omnibox
 ```
 
 ### Remove and restore the stock launcher
@@ -67,14 +67,14 @@ First remove these two lines from `~/.config/hypr/bindings.lua`:
 
 ```lua
 hl.unbind("SUPER + SPACE")
-o.bind("SUPER + SPACE", "Omnibox launcher", "omarchy-shell shell toggle ryan.omnibox")
+o.bind("SUPER + SPACE", "Omnibox launcher", "omarchy-shell shell toggle bitr0t.omnibox")
 ```
 
 Then reload Hyprland and remove the plugin:
 
 ```bash
 hyprctl reload
-omarchy plugin remove ryan.omnibox
+omarchy plugin remove bitr0t.omnibox
 ```
 
 The default Omarchy `SUPER + SPACE` binding becomes active again because the
