@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Omnibox provider: search installed pacman packages.
+# Protocol: $1 = query; stdout rows: label<TAB>detail<TAB>action<TAB>icon
+set -euo pipefail
+
+q="${1:-}"
+[[ -n $q ]] || exit 0
+
+pacman -Q 2>/dev/null | awk -v q="$q" '
+  index(tolower($1), tolower(q)) {
+    printf "%s\t%s · installed\txdg-terminal-exec -- bash -lc \047pacman -Qi %s; read -n 1 -s\047\t󰣇\n", $1, $2, $1
+    if (++n >= 8) exit
+  }'
