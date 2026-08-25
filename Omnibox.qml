@@ -72,6 +72,7 @@ Item {
     providersProc.latestRun += 1
     providersProc.pending = false
     providersProc.pendingCommand = []
+    providerPublishTimer.stop()
     fdProc.running = false
     providersProc.running = false
   }
@@ -262,11 +263,14 @@ Item {
     root.saveUsage()
   }
 
-  function usageWriterPath() {
-    var sourceDir = root.manifest && root.manifest.__sourceDir
+  function pluginSourceDir() {
+    return root.manifest && root.manifest.__sourceDir
       ? String(root.manifest.__sourceDir)
       : Quickshell.env("HOME") + "/.config/omarchy/plugins/ryan.omnibox"
-    return sourceDir + "/bin/write-usage"
+  }
+
+  function usageWriterPath() {
+    return root.pluginSourceDir() + "/bin/write-usage"
   }
 
   function saveUsage() {
@@ -346,7 +350,8 @@ Item {
   property var providerList: []        // [{name, path}]
   property var fileRows: []            // last fd batch (absolute paths)
   property var providerRows: ({})      // provider name -> parsed rows
-  property var appIconIndex: ({})      // normalized desktop id -> icon source
+  property var appCandidates: []
+  property bool appCandidatesReady: false
 
   readonly property var systemRows: [
     { id: "lock", icon: "󰌾", label: "Lock", aliases: "lock screen secure", action: "omarchy-system-lock" },
@@ -387,31 +392,24 @@ Item {
     return (hash >>> 0).toString(16) + "-" + text.length
   }
 
-  function searchTextFor(query) {
-    return Fuzzy.normalize(query)
+  function bestRows(rows, max) {
+    rows.sort(function(a, b) {
+      if (a.score !== b.score) return a.score - b.score
+      return String(a.label || "").localeCompare(String(b.label || ""))
+    })
+    return rows.slice(0, Math.max(0, Number(max) || 0))
   }
 
   // -- apps ---------------------------------------------------------------
 
-  function rebuildAppIconIndex() {
-    var index = ({})
-    if (!root.appLibrary) return index
-    var entries = root.appLibrary.sortedEntries("")
-    for (var i = 0; i < entries.length; i++) {
-      var entry = entries[i].entry
-      var appId = String(entry.id || "")
-      if (!appId) continue
-      var base = appId.toLowerCase().replace(/\.desktop$/, "")
-      index[base] = root.appLibrary.iconSource(String(entry.icon || ""))
+  function rebuildAppCandidates() {
+    var candidates = []
+    if (!root.appLibrary) {
+      root.appCandidates = candidates
+      root.appCandidatesReady = false
+      return
     }
-    return index
-  }
-
-  function appRows(query) {
-    var rows = []
-    if (!root.appLibrary) return rows
     var entries = root.appLibrary.sortedEntries("")
-    var max = root.configMaxResults()
     for (var i = 0; i < entries.length; i++) {
       var entry = entries[i].entry
       var appId = String(entry.id || "")
@@ -424,16 +422,35 @@ Item {
         if (entry.keywords && typeof entry.keywords.join === "function")
           haystack += " " + entry.keywords.join(" ")
       } catch (e) { }
-      var score = Fuzzy.score(query, haystack)
+      candidates.push({
+        appId: appId,
+        name: name,
+        subtext: subtext || "",
+        haystack: haystack,
+        icon: String(entry.icon || "")
+      })
+    }
+    root.appCandidates = candidates
+    root.appCandidatesReady = true
+  }
+
+  function appRows(query) {
+    var rows = []
+    if (!root.appLibrary) return rows
+    if (!root.appCandidatesReady) root.rebuildAppCandidates()
+    for (var i = 0; i < root.appCandidates.length; i++) {
+      var candidate = root.appCandidates[i]
+      var score = Fuzzy.score(query, candidate.haystack)
       if (score === null) continue
-      var row = root.makeRow("apps", "", root.appLibrary.iconSource(String(entry.icon || "")),
-        name, subtext || "", "app", appId, "app:" + appId)
+      var row = root.makeRow("apps", "", candidate.icon, candidate.name, candidate.subtext,
+        "app", candidate.appId, "app:" + candidate.appId)
       row.score = score - root.usageBoost(row.rowKey)
       rows.push(row)
-      if (rows.length >= max * 3) break
     }
-    rows.sort(function(a, b) { return a.score - b.score })
-    return rows.slice(0, max)
+    rows = root.bestRows(rows, root.configMaxResults())
+    for (var j = 0; j < rows.length; j++)
+      rows[j].appIcon = root.appLibrary.iconSource(rows[j].appIcon)
+    return rows
   }
 
   // -- windows ------------------------------------------------------------
@@ -454,11 +471,10 @@ Item {
       var detail = klass && title ? klass + " · " + ws : ws
       var row = root.makeRow("windows", "󰍲", "", label, detail,
         "window", String(win.address || ""), "win:" + String(win.address || ""))
-      row.score = (score || 0) + 2
+      row.score = (score || 0) + 2 + i * 0.001
       rows.push(row)
-      if (rows.length >= max) break
     }
-    return rows
+    return root.bestRows(rows, max)
   }
 
   function refreshWindows() {
@@ -670,11 +686,10 @@ Item {
       if (score === null) continue
       var row = root.makeRow("ssh", "󰣀", "", "SSH " + host, "Open terminal session",
         "exec", "xdg-terminal-exec -- ssh -- " + Util.shellQuote(host), "ssh:" + host)
-      row.score = score + 4 - root.usageBoost(row.rowKey)
+      row.score = score + 4 - root.usageBoost(row.rowKey) + i * 0.001
       rows.push(row)
-      if (rows.length >= max) break
     }
-    return rows
+    return root.bestRows(rows, max)
   }
 
   // -- clipboard ----------------------------------------------------------------
@@ -696,26 +711,27 @@ Item {
         row = root.makeRow("clipboard", "", "", entry.label, "Paste",
           "clipboard", String(entry.index), "clip:" + entry.stableKey)
       }
-      row.score = score + 6
+      row.score = score + 6 + i * 0.001
       rows.push(row)
-      if (rows.length >= max) break
     }
-    return rows
+    return root.bestRows(rows, max)
   }
 
   // -- external providers ---------------------------------------------------------
   //
-  // Executables in <plugin>/providers/ and ~/.config/omarchy/omnibox/providers/
-  // receive the query as $1 and print TSV rows: label\tdetail\taction[\ticon].
-  // A single bash pass runs them all with a per-provider timeout and prefixes
-  // each line with the provider name.
+  // Executables in the shipped/user provider directories receive the query
+  // as $1 and print TSV rows: label\tdetail\taction[\ticon].
+  // A tracked helper runs them concurrently, enforces TERM+KILL deadlines,
+  // bounds output, and streams each completed provider batch back immediately.
 
   property string userProvidersDir: Quickshell.env("HOME") + "/.config/omarchy/omnibox/providers"
 
   function pluginProvidersDir() {
-    var manifest = root.manifest
-    if (manifest && manifest.__sourceDir) return String(manifest.__sourceDir) + "/providers"
-    return Quickshell.env("HOME") + "/.config/omarchy/plugins/ryan.omnibox/providers"
+    return root.pluginSourceDir() + "/providers"
+  }
+
+  function providerRunnerPath() {
+    return root.pluginSourceDir() + "/bin/run-providers"
   }
 
   function scanProviders() {
@@ -729,22 +745,31 @@ Item {
   }
 
   function runProviders(query) {
+    providerPublishTimer.stop()
+    root.providerRows = ({})
+    if (root.opened) root.rebuildDisplay()
+
     if (!query || root.providerList.length === 0) {
-      root.providerRows = ({})
       providersProc.latestRun += 1
       providersProc.pending = false
       providersProc.pendingCommand = []
       providersProc.running = false
       return
     }
-    var script = "q=" + Util.shellQuote(query) + "; "
+
+    var command = [
+      root.providerRunnerPath(),
+      "0.9",   // SIGTERM deadline
+      "0.2",   // SIGKILL grace
+      "8",     // rows per provider
+      "16384", // bytes per physical output line
+      query
+    ]
     for (var i = 0; i < root.providerList.length; i++) {
-      var provider = root.providerList[i]
-      script += "timeout 0.9 " + Util.shellQuote(provider.path) + " \"$q\" 2>/dev/null | head -n 8 "
-        + "| while IFS= read -r line; do [[ -n $line ]] && printf '%s\\t%s\\n' "
-        + Util.shellQuote(provider.name) + " \"$line\"; done; "
+      command.push(root.providerList[i].name)
+      command.push(root.providerList[i].path)
     }
-    root.queueProviderSearch(query, ["bash", "-lc", script])
+    root.queueProviderSearch(query, command)
   }
 
   function queueProviderSearch(query, command) {
@@ -763,29 +788,55 @@ Item {
     providersProc.activeRun = providersProc.pendingRun
     providersProc.activeSerial = providersProc.pendingSerial
     providersProc.activeQuery = providersProc.pendingQuery
-    providersProc.collected = ""
     providersProc.command = providersProc.pendingCommand
     providersProc.pending = false
     providersProc.running = true
   }
 
+  function acceptProviderLine(data) {
+    if (providersProc.activeRun !== providersProc.latestRun
+        || providersProc.activeSerial !== root.querySerial
+        || providersProc.activeQuery !== root.currentQuery()) return
+    var line = String(data || "").replace(/\r$/, "")
+    if (!line) return
+    var parts = line.split("\t")
+    if (parts.length < 4) return
+    var name = parts[0]
+    var label = parts[1]
+    var detail = parts[2]
+    var action = parts[3]
+    var icon = parts.length > 4 ? parts[4] : ""
+    if (!name || !label || !action) return
+
+    var next = ({})
+    for (var key in root.providerRows)
+      next[key] = root.providerRows[key].slice()
+    var batch = next[name] || []
+    if (batch.length >= 8) return
+    batch.push({ label: label, detail: detail, action: action, icon: icon })
+    next[name] = batch
+    root.providerRows = next
+    providerPublishTimer.restart()
+  }
+
   function providerRowList(query) {
     var rows = []
-    var max = root.configMaxResults()
     for (var i = 0; i < root.providerList.length; i++) {
       var name = root.providerList[i].name
       var batch = root.providerRows[name]
       if (!batch) continue
-      for (var j = 0; j < batch.length && rows.length < max; j++) {
+      for (var j = 0; j < batch.length; j++) {
         var parsed = batch[j]
+        var detail = parsed.detail || name
         var row = root.makeRow("providers", parsed.icon || "󰐢", "", parsed.label,
-          parsed.detail || name, "exec", parsed.action,
-          "prov:" + name + ":" + root.stableHash(parsed.label + "\u0000" + parsed.detail + "\u0000" + parsed.action))
-        row.score = 60 + j * 2 - root.usageBoost(row.rowKey)
+          detail, "exec", parsed.action,
+          "prov:" + name + ":" + root.stableHash(parsed.label + "\u0000" + detail + "\u0000" + parsed.action))
+        var score = Fuzzy.score(query, parsed.label + " " + detail)
+        row.score = score === null ? 100 + j : 50 + score + i * 0.001
         rows.push(row)
       }
     }
-    return rows
+    return root.bestRows(rows, root.configMaxResults())
   }
 
   // ------------------------------------------------------------- display
@@ -913,7 +964,7 @@ Item {
   }
 
   function refreshDynamicSources() {
-    root.appIconIndex = root.rebuildAppIconIndex()
+    if (!root.appCandidatesReady) root.rebuildAppCandidates()
     root.refreshWindows()
   }
 
@@ -1093,33 +1144,15 @@ Item {
     property string activeQuery: ""
     property var pendingCommand: []
     property bool pending: false
-    property string collected: ""
     stdout: SplitParser {
-      onRead: function(data) { providersProc.collected += data + "\n" }
+      onRead: function(data) { root.acceptProviderLine(data) }
     }
     onRunningChanged: if (!running) Qt.callLater(function() { root.startPendingProviderSearch() })
     onExited: {
-      if (providersProc.activeRun !== providersProc.latestRun
-          || providersProc.activeSerial !== root.querySerial
-          || providersProc.activeQuery !== root.currentQuery()) return
-      var next = ({})
-      var lines = providersProc.collected.split("\n")
-      for (var i = 0; i < lines.length; i++) {
-        var line = lines[i].trim()
-        if (!line) continue
-        var parts = line.split("\t")
-        if (parts.length < 4) continue
-        var name = parts[0]
-        var label = parts[1]
-        var detail = parts[2]
-        var action = parts[3]
-        var icon = parts.length > 4 ? parts[4] : ""
-        if (!label || !action) continue
-        if (!next[name]) next[name] = []
-        next[name].push({ label: label, detail: detail, action: action, icon: icon })
-      }
-      root.providerRows = next
-      if (root.opened) root.rebuildDisplay()
+      if (providersProc.activeRun === providersProc.latestRun
+          && providersProc.activeSerial === root.querySerial
+          && providersProc.activeQuery === root.currentQuery())
+        providerPublishTimer.restart()
     }
   }
 
@@ -1151,6 +1184,13 @@ Item {
       root.providerList = list
       if (root.opened) root.runProviders(root.currentQuery())
     }
+  }
+
+  Timer {
+    id: providerPublishTimer
+    interval: 16
+    repeat: false
+    onTriggered: if (root.opened) root.rebuildDisplay()
   }
 
   Timer {
@@ -1253,6 +1293,14 @@ Item {
     onFileChanged: reload()
   }
 
+  function cappedClipboardText(raw) {
+    var text = String(raw || "")
+    var limit = 8192
+    if (text.length <= limit) return text
+    var cut = text.lastIndexOf("\n", limit)
+    return text.slice(0, cut > 0 ? cut : limit)
+  }
+
   function parseClipboard(raw) {
     var entries = []
     try {
@@ -1263,7 +1311,7 @@ Item {
         if (!item) continue
         if (item.type === "text") {
           var rawText = String(item.text || "")
-          var text = rawText.replace(/\s+/g, " ").trim()
+          var text = root.cappedClipboardText(rawText).replace(/\s+/g, " ").trim()
           if (!text) continue
           entries.push({
             index: i,
@@ -1297,7 +1345,7 @@ Item {
   Connections {
     target: root.appLibrary
     function onAppsChanged() {
-      root.appIconIndex = root.rebuildAppIconIndex()
+      root.rebuildAppCandidates()
       if (root.opened) root.rebuildDisplay()
     }
   }

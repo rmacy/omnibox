@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+
+set -uo pipefail
+
+usage() {
+  printf 'usage: %s <timeout-seconds> <kill-after-seconds> <max-rows> <max-line-bytes> <query> [<name> <path> ...]\n' "${0##*/}" >&2
+  exit 2
+}
+
+positive_seconds() {
+  local value=$1 significant
+  [[ $value =~ ^(([0-9]+([.][0-9]*)?)|([.][0-9]+))$ ]] || return 1
+  significant=${value//[0.]/}
+  [[ $significant == *[1-9]* ]]
+}
+
+(( $# >= 5 )) || usage
+
+timeout_seconds=$1
+kill_after_seconds=$2
+max_rows=$3
+max_line_bytes=$4
+query=$5
+shift 5
+
+positive_seconds "$timeout_seconds" || usage
+positive_seconds "$kill_after_seconds" || usage
+[[ $max_rows =~ ^[1-9][0-9]*$ ]] || usage
+[[ $max_line_bytes =~ ^[1-9][0-9]*$ ]] || usage
+(( $# % 2 == 0 )) || usage
+
+names=()
+providers=()
+while (( $# > 0 )); do
+  names+=("$1")
+  providers+=("$2")
+  shift 2
+done
+
+umask 077
+temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/run-providers.XXXXXXXX") || {
+  printf 'run-providers: could not create temporary directory\n' >&2
+  exit 1
+}
+lock_file=$(mktemp "$temp_dir/lock.XXXXXXXX") || {
+  rmdir "$temp_dir"
+  printf 'run-providers: could not create lock file\n' >&2
+  exit 1
+}
+exec {publication_lock}>"$lock_file"
+
+outputs=()
+pids=()
+declare -A names_by_pid=()
+declare -A outputs_by_pid=()
+cleaning=0
+cleanup() {
+  (( cleaning == 0 )) || return
+  cleaning=1
+  trap - EXIT HUP INT TERM
+
+  local pid
+  for pid in "${pids[@]}"; do
+    kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  done
+  for pid in "${pids[@]}"; do
+    kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  done
+  for pid in "${pids[@]}"; do
+    wait "$pid" 2>/dev/null || true
+  done
+
+  exec {publication_lock}>&-
+  rm -f -- "${outputs[@]}" "$lock_file"
+  rmdir "$temp_dir" 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+publish() {
+  local provider_name=$1 output=$2
+
+  flock -x "$publication_lock" || return
+  LC_ALL=C PROVIDER_NAME="$provider_name" awk \
+    -v max_rows="$max_rows" \
+    -v max_bytes="$max_line_bytes" '
+      NR > max_rows { exit }
+      {
+        printf "%s\t%s\n", ENVIRON["PROVIDER_NAME"], substr($0, 1, max_bytes)
+      }
+    ' "$output"
+  flock -u "$publication_lock" || true
+}
+
+
+for (( i = 0; i < ${#providers[@]}; i++ )); do
+  output=$(mktemp "$temp_dir/provider.XXXXXXXX") || {
+    printf 'run-providers: could not create provider output file\n' >&2
+    exit 1
+  }
+  outputs+=("$output")
+  timeout --kill-after="$kill_after_seconds" "$timeout_seconds" \
+    "${providers[i]}" "$query" >"$output" 2>/dev/null &
+  pid=$!
+  pids+=("$pid")
+  names_by_pid["$pid"]=${names[i]}
+  outputs_by_pid["$pid"]=$output
+done
+
+while (( ${#pids[@]} > 0 )); do
+  completed_pid=
+  wait -n -p completed_pid "${pids[@]}" || true
+  [[ -n $completed_pid ]] || continue
+
+  publish "${names_by_pid[$completed_pid]}" "${outputs_by_pid[$completed_pid]}"
+  unset 'names_by_pid[$completed_pid]' 'outputs_by_pid[$completed_pid]'
+
+  remaining_pids=()
+  for pid in "${pids[@]}"; do
+    [[ $pid == "$completed_pid" ]] || remaining_pids+=("$pid")
+  done
+  pids=("${remaining_pids[@]}")
+done
+
+exit 0

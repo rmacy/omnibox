@@ -128,9 +128,11 @@ label<TAB>detail<TAB>action<TAB>icon
 - `action` — shell command run on Enter (required)
 - `icon` — optional Nerd Font glyph
 
-Providers run on every debounced keystroke with a ~0.9s budget each, so keep
-them fast. Example — the shipped `packages` provider searches installed
-packages:
+Providers run concurrently on every debounced query. Each gets 0.9 seconds,
+then a 0.2-second SIGKILL grace; output is capped to 8 rows and 16 KiB per
+line. Completed providers stream into the launcher immediately, then all
+provider rows are fuzzy-ranked together before `maxResults` is applied. Keep
+providers fast. The shipped `packages` example searches installed packages:
 
 ```bash
 #!/usr/bin/env bash
