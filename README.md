@@ -15,10 +15,15 @@ ranked results from ten sources as you type:
 | **Calculator** | Type math: `=2+2*10`, `10% of 200`, `sqrt(16)`, `2pi`, `sin(30)` — Enter copies the result |
 | **Web** | Search DuckDuckGo, Google, YouTube, GitHub, Arch Wiki; bare URLs open directly |
 | **Shell** | Prefix `>` to run a command in a terminal or in the background |
-| **System** | Lock, suspend, logout, reboot, shutdown, screenshot, theme switcher, keybindings |
+| **System** | Lock, suspend, logout, reboot, shutdown, menu routes, and learned-state controls |
+| **Omarchy commands** | Search the live `omarchy commands --json` catalog and run policy-gated native actions |
 | **Clipboard** | Search your Omarchy clipboard history; Enter pastes into the focused window |
 | **SSH** | Hosts from `~/.ssh/config`; Enter opens an `ssh` session in your terminal |
 | **Providers** | Executable extensions that answer the query with TSV rows (see below) |
+
+Screenshot actions use `omasnap` when it is installed. Otherwise they fall back
+to Omarchy’s system capture command. Mode and edit/copy/save are selected inside
+the action flow.
 
 Every result has a primary action plus a discoverable action palette. Press
 **Tab** or **Ctrl+K** to act on a selected app, window, file, calculation, URL,
@@ -112,6 +117,31 @@ rm -rf ~/.local/state/omnibox
 | `>` | Shell command (`>uname -a` → run in terminal / background) |
 | `=` | Force calculator (`=42*2`) |
 | none | Apps, windows, files, math auto-detect, web, everything |
+
+## Native intents
+
+The command catalog is cached once per shell lifetime. High-frequency commands
+have deterministic typed adapters; the remaining visible catalog stays
+searchable by route, summary, aliases, arguments, and examples.
+
+```text
+remind 20 Check oven
+show reminders
+theme bauhaus
+screenshot
+stay awake
+night light
+bluetooth off
+volume +10
+brightness 50
+text size 14
+background next
+```
+
+Commands with unresolved arguments enter argument mode. Destructive actions
+enter confirmation mode. Privileged and terminal-interactive commands open in
+a visible terminal; `requires_sudo: false` is never treated as proof that an
+action is safe.
 
 ## Configuration
 

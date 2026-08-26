@@ -378,14 +378,21 @@ User query:
 screenshot region
 ```
 
-Concrete execution:
+Preferred execution when Omasnap is available:
+
+```bash
+omasnap region --copy
+```
+
+Fallback through the system’s Omarchy capture command:
 
 ```bash
 omarchy capture screenshot region copy
 ```
 
-The catalog defines screenshot modes `smart`, `region`, `windows`, and
-`fullscreen`, plus copy/save selection.[^capture]
+The action picker must expose `smart`, `region`, `windows`, and `fullscreen`
+plus edit/copy/save. Omasnap is selected from an observed executable-availability
+state; otherwise Omarchy’s default capture route is used.[^omasnap][^capture]
 
 #### Desktop toggles and adjustments
 
@@ -779,3 +786,4 @@ Still to resolve in the matching delivery stages:
 [^capture]: Live `omarchy commands --json` entry for route `omarchy capture screenshot`; its declared args are `[smart|region|windows|fullscreen] [slurp|copy|save] [--editor=<name>]`.
 [^launch-editor]: Installed default-editor launcher: `/usr/share/omarchy/bin/omarchy-launch-editor`, lines 3–4 and 25–32.
 [^taildrop]: Installed Taildrop command contract: `/usr/share/omarchy/bin/omarchy-tailscale-send`, lines 3–10.
+[^omasnap]: Installed Omasnap CLI contract from `omasnap --help`: targets `smart|region|windows|fullscreen`; `--copy` and `--save` bypass the editor, while no output flag opens annotation.

@@ -195,74 +195,74 @@ Omnibox 2.0 is complete only when all of the following are true:
 
 ### B0 — Catalog and policy
 
-- [ ] **Implement a one-shot cached loader for `omarchy commands --json`.**
+- [x] **Implement a one-shot cached loader for `omarchy commands --json`.**
   Acceptance: it runs once per shell lifetime or explicit refresh, validates the
   documented fields from `/usr/share/omarchy/bin/omarchy:669-684`, and does not
   block cached initial results.
-- [ ] **Handle catalog absence, invalid JSON, and schema drift.** Acceptance:
+- [x] **Handle catalog absence, invalid JSON, and schema drift.** Acceptance:
   Omnibox keeps all non-catalog sources usable and reports one bounded error.
-- [ ] **Index route, summary, aliases, args, and examples.** Acceptance: searches
+- [x] **Index route, summary, aliases, args, and examples.** Acceptance: searches
   such as `network`, `capture`, and `theme` find relevant commands by summary
   without knowing the route.
-- [ ] **Exclude hidden commands by default.** Acceptance: a fixture containing a
+- [x] **Exclude hidden commands by default.** Acceptance: a fixture containing a
   hidden exact match does not surface without explicit developer configuration.
-- [ ] **Create a conservative command policy registry.** Acceptance: every
+- [x] **Create a conservative command policy registry.** Acceptance: every
   directly executable catalog entry is classified by argument resolution,
   interaction, terminal need, privilege, destructiveness, and lifecycle.
-- [ ] **Do not treat `requires_sudo` as a safety verdict.** Acceptance: tests show
+- [x] **Do not treat `requires_sudo` as a safety verdict.** Acceptance: tests show
   non-sudo destructive commands still require confirmation and harmless
   sudo-required commands still use a visible terminal.
-- [ ] **Add a diagnostic action that shows catalog provenance and declared
+- [x] **Add a diagnostic action that shows catalog provenance and declared
   usage.** Acceptance: it never executes the command.
 
 ### B1 — Typed native adapters
 
-- [ ] **Implement reminder parsing and execution.** Acceptance:
+- [x] **Implement reminder parsing and execution.** Acceptance:
   `remind 20 check oven` resolves to argv
   `['omarchy','reminder','20','Check oven']`; zero, negative, or non-integer
   minutes do not produce an executable result.
-- [ ] **Implement reminder listing.** Acceptance: `omarchy reminder show --json`
+- [x] **Implement reminder listing.** Acceptance: `omarchy reminder show --json`
   results are bounded and active reminder content is not persisted in usage or
   metrics.
-- [ ] **Implement inline theme selection.** Acceptance: candidates come from
+- [x] **Implement inline theme selection.** Acceptance: candidates come from
   `omarchy theme list`; selection executes `omarchy theme set <full-name>` as
   argv and works for names with spaces.
-- [ ] **Implement capture mode and destination pickers.** Acceptance:
+- [x] **Implement capture mode and destination pickers.** Acceptance:
   screenshot smart/region/windows/fullscreen and copy/save options execute the
   catalog-declared argv; unsupported combinations are absent.
-- [ ] **Implement idle, nightlight, notification-silencing, Bluetooth, and bar
+- [x] **Implement idle, nightlight, notification-silencing, Bluetooth, and bar
   toggles where live state is available.** Acceptance: rows report only observed
   state and refresh after execution.
-- [ ] **Implement audio adjustment adapter.** Acceptance: validated raise/lower/
+- [x] **Implement audio adjustment adapter.** Acceptance: validated raise/lower/
   mute or signed step values pass as one argv element and retain Omarchy OSD.
-- [ ] **Implement brightness adjustment adapter.** Acceptance: validated signed
+- [x] **Implement brightness adjustment adapter.** Acceptance: validated signed
   percentage/off/on values pass as one argv element and target the focused
   display unless the user explicitly chooses another.
-- [ ] **Implement theme/background and text-size adapters only after their live
+- [x] **Implement theme/background and text-size adapters only after their live
   command ranges are verified.** Acceptance: values come from command output or
   declared range; no free-form shell template exists.
-- [ ] **Add direct pins/aliases for safe native actions.** Acceptance: state stores
+- [x] **Add direct pins/aliases for safe native actions.** Acceptance: state stores
   command/action IDs and validated enum values only; reminder messages and
   arbitrary arguments are excluded.
 
 ### B2 — Long-tail command discovery
 
-- [ ] **Surface safe no-argument commands through the generic catalog.**
+- [x] **Surface safe no-argument commands through the generic catalog.**
   Acceptance: primary action is enabled only after policy classification.
-- [ ] **Route commands with unresolved arguments into Arguments mode.**
+- [x] **Route commands with unresolved arguments into Arguments mode.**
   Acceptance: no required-argument command is executed merely to display help.
-- [ ] **Route terminal/interactive commands through terminal policy.**
+- [x] **Route terminal/interactive commands through terminal policy.**
   Acceptance: gum/TUI/password prompts are visible and Omnibox does not remain
   falsely in Running.
-- [ ] **Confirm destructive or remote generic actions.** Acceptance: command,
+- [x] **Confirm destructive or remote generic actions.** Acceptance: command,
   target arguments, and provenance are shown before execution.
-- [ ] **Add catalog ranking fixtures.** Acceptance: human-summary matches compete
+- [x] **Add catalog ranking fixtures.** Acceptance: human-summary matches compete
   globally without burying exact files/apps and catalog result caps prevent
   flooding.
 
 ### Stage B gate
 
-- [ ] **Pass the Native Omarchy gate.** Observable result: the documented
+- [x] **Pass the Native Omarchy gate.** Observable result: the documented
   reminder, theme, capture, toggle, audio, and brightness flows complete without
   raw shell entry; long-tail discovery is cached and policy-gated; privileged
   and destructive live scenarios behave correctly.

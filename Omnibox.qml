@@ -10,6 +10,7 @@ import "js/Jsonc.js" as Jsonc
 import "js/Actions.js" as Actions
 import "js/Execution.js" as Execution
 import "js/Flow.js" as Flow
+import "js/Native.js" as Native
 import "js/Query.js" as Query
 import "js/Ranking.js" as Ranking
 import "js/Registry.js" as Registry
@@ -52,6 +53,12 @@ Item {
   property int activeArgumentIndex: 0
   property var argumentValues: ({})
   readonly property int maxActionOutputBytes: 16384
+  property var nativeCommands: []
+  property var nativeThemes: []
+  property var nativeStates: ({})
+  property bool nativeCatalogLoaded: false
+  property string nativeCatalogError: ""
+  readonly property int maxNativeCatalogBytes: 1048576
 
   function resetInteraction() {
     var reset = Flow.reset({})
@@ -89,6 +96,7 @@ Item {
     searchField.text = String(payload.query || "")
     searchField.cursorPosition = searchField.text.length
     root.refreshDynamicSources()
+    root.refreshNativeState()
     root.rebuildDisplay(false)
 
     var query = root.currentQuery()
@@ -108,6 +116,9 @@ Item {
     sshView.reload()
     clipView.reload()
     root.scanProviders()
+    root.loadNativeCatalog(true)
+    root.loadNativeThemes(true)
+    root.refreshNativeState()
     return "ok"
   }
 
@@ -219,6 +230,7 @@ Item {
     if (source === "files") return "file:" + identity
     if (source === "system") return "sys:" + identity
     if (source === "ssh") return "ssh:" + identity
+    if (source === "native") return "native:" + root.stableHash(identity)
     return ""
   }
 
@@ -236,6 +248,14 @@ Item {
     if (source === "system") {
       var systemId = id.indexOf("sys:") === 0 ? id.slice(4) : ""
       return root.systemSpec(systemId) ? systemId : ""
+    }
+    if (source === "native") {
+      var nativeValue = String(value || "")
+      try {
+        var nativeStored = JSON.parse(nativeValue)
+        nativeValue = String(nativeStored.route || "")
+      } catch (_nativeStoredError) { }
+      return nativeValue.indexOf("omarchy ") === 0 ? nativeValue : ""
     }
     if (source === "ssh") {
       var host = id.indexOf("ssh:") === 0 ? id.slice(4) : String(value || "")
@@ -356,6 +376,9 @@ Item {
       candidate = root.makeCandidate("system", spec.icon, "", spec.label, "",
         spec.builtin ? "systemBuiltin" : (spec.argv ? "systemArgv" : "shell"),
         spec.builtin || (spec.argv ? spec.argv.join("\u0000") : spec.action), canonicalKey)
+    } else if (source === "native") {
+      candidate = root.nativeCandidateForRoute(identity)
+      if (!candidate) return null
     } else if (source === "ssh" && root.isSafeSshHost(identity)) {
       candidate = root.makeCandidate("ssh", "󰣀", "", "SSH " + identity, "Open terminal session",
         "ssh", identity, canonicalKey)
@@ -405,7 +428,6 @@ Item {
     { id: "theme", icon: "󰸌", label: "Theme", aliases: "themes appearance style", action: "theme=$(omarchy-theme-switcher); [[ -n $theme ]] && omarchy-theme-set \"$theme\"" },
     { id: "menu", icon: "󰣇", label: "Omarchy Menu", aliases: "omarchy menu settings preferences configure setup", action: "omarchy-menu toggle setup" },
     { id: "keybindings", icon: "󰌌", label: "Keybindings", aliases: "shortcuts keys help", action: "omarchy-menu-keybindings" },
-    { id: "screenshot", icon: "󰆧", label: "Screenshot", aliases: "capture screenshot snap", action: "omarchy-capture-screenshot" },
     { id: "suspend", icon: "󰒲", label: "Suspend", aliases: "sleep suspend", action: "systemctl suspend" },
     { id: "logout", icon: "󰍃", label: "Log Out", aliases: "logout sign out log off", action: "omarchy-system-logout" },
     { id: "reboot", icon: "󰜉", label: "Reboot", aliases: "restart reboot", action: "omarchy-system-reboot" },
@@ -504,6 +526,7 @@ Item {
     if (candidate.source === "web") return "web"
     if (candidate.source === "run") return "shell"
     if (candidate.source === "system") return "command"
+    if (candidate.source === "native") return "command"
     if (candidate.source === "clipboard") return "clipboard"
     if (candidate.source === "ssh") return "ssh"
     return "provider"
@@ -514,6 +537,7 @@ Item {
     var type = root.resultTypeForCandidate(candidate)
     var payload = String(candidate.value === undefined || candidate.value === null ? "" : candidate.value)
     if (type === "window" && !/^0x[0-9a-fA-F]+$/.test(payload)) return null
+    var allowLearning = true
     var actions = []
 
     if (type === "app") {
@@ -626,6 +650,61 @@ Item {
         title: "Copy", executor: "builtin", builtin: "copyValue",
         lifecycle: "close", risk: "safe"
       })
+    } else if (candidate.behavior === "nativeCatalogError") {
+      allowLearning = false
+      root.appendCheckedAction(actions, {
+        id: "native.reload-catalog",
+        title: "Reload command catalog",
+        executor: "builtin",
+        builtin: "reloadNativeCatalog",
+        lifecycle: "keepOpen",
+        risk: "caution"
+      })
+    } else if (candidate.behavior === "nativeSpec") {
+      var nativeSpec
+      try { nativeSpec = JSON.parse(payload) } catch (_nativeError) { return null }
+      allowLearning = nativeSpec.learnable === true
+      if (nativeSpec.argumentFields && nativeSpec.argumentFields.length > 0) {
+        root.appendCheckedAction(actions, {
+          id: "native.run-template",
+          title: "Choose options",
+          executor: "builtin",
+          builtin: "runNativeTemplate",
+          arguments: nativeSpec.argumentFields,
+          lifecycle: nativeSpec.lifecycle || "close",
+          risk: nativeSpec.risk || "safe",
+          confirm: nativeSpec.confirm === true
+        })
+      } else if (nativeSpec.requiredArgs) {
+        root.appendCheckedAction(actions, {
+          id: "native.run-with-arguments",
+          title: "Run with arguments",
+          executor: "builtin",
+          builtin: "runNativeWithArguments",
+          arguments: [{ id: "arguments", type: "string", title: nativeSpec.args || "Arguments", required: true }],
+          lifecycle: nativeSpec.lifecycle || "keepOpen",
+          risk: nativeSpec.risk || "safe",
+          confirm: nativeSpec.confirm === true
+        })
+      } else {
+        root.appendCheckedAction(actions, {
+          id: "native.run",
+          title: "Run",
+          executor: "argv",
+          argv: nativeSpec.argv || [],
+          lifecycle: nativeSpec.lifecycle || "keepOpen",
+          risk: nativeSpec.risk || "safe",
+          confirm: nativeSpec.confirm === true
+        })
+      }
+      root.appendCheckedAction(actions, {
+        id: "native.inspect",
+        title: "Inspect command",
+        executor: "builtin",
+        builtin: "inspectNativeCommand",
+        lifecycle: "keepOpen",
+        risk: "safe"
+      })
     } else if (candidate.behavior === "systemArgv") {
       root.appendCheckedAction(actions, {
         id: "command.run", title: "Run", executor: "argv",
@@ -653,7 +732,7 @@ Item {
       })
     }
 
-    root.appendLearningActions(actions, id, type)
+    if (allowLearning) root.appendLearningActions(actions, id, type)
     var checked = Actions.makeResult({
       id: id,
       type: type,
@@ -986,6 +1065,116 @@ Item {
     return root.bestRows(rows, max)
   }
 
+
+  // -- native Omarchy commands -----------------------------------------------
+
+  function nativeCandidateFromSpec(spec) {
+    var identity = String(spec.route || (spec.argv || []).join("\u0000"))
+    var id = "native:" + root.stableHash(identity)
+    var candidate = root.makeCandidate("native", String(spec.icon || "󰣇"), "",
+      String(spec.title || spec.summary || spec.route || "Omarchy command"),
+      String(spec.subtitle || spec.route || ""),
+      "nativeSpec", JSON.stringify(spec), id)
+    candidate.matchScore = Number(spec.matchScore) || 0
+    return candidate
+  }
+
+  function nativeCandidateForCommand(command, matchScore) {
+    if (!command) return null
+    var policy = command.policy || Native.classify(command)
+    var argv = Native.routeArgv(command.route)
+    if (argv.length === 0) return null
+    var forceRequired = command.route === "omarchy audio output volume"
+    var requiredArgs = forceRequired || Native.hasRequiredArgs(command.args)
+    return root.nativeCandidateFromSpec({
+      route: command.route,
+      title: command.summary || command.route,
+      subtitle: command.route + (command.args ? " " + command.args : ""),
+      argv: argv,
+      args: command.args || "",
+      examples: command.examples || [],
+      aliases: command.aliases || [],
+      requiredArgs: requiredArgs,
+      interactive: policy.interactive,
+      requiresSudo: command.requires_sudo === true,
+      risk: policy.risk,
+      lifecycle: policy.lifecycle,
+      confirm: policy.confirm,
+      matchScore: Number(matchScore) || 0,
+      learnable: !requiredArgs && !policy.destructive && !policy.interactive,
+      provenance: "omarchy commands --json"
+    })
+  }
+
+  function nativeCandidateForRoute(route) {
+    for (var i = 0; i < root.nativeCommands.length; i++)
+      if (root.nativeCommands[i].route === route)
+        return root.nativeCandidateForCommand(root.nativeCommands[i], 0)
+    return null
+  }
+
+  function nativeRows(query) {
+    var rows = []
+    var seen = ({})
+    if (root.nativeCatalogError && Fuzzy.score(query, "command catalog unavailable error") !== null) {
+      var errorCandidate = root.makeCandidate("native", "󰅙", "",
+        "Omarchy command catalog unavailable", root.nativeCatalogError,
+        "nativeCatalogError", root.nativeCatalogError, "native:catalog-error")
+      errorCandidate.matchScore = -80
+      rows.push(errorCandidate)
+      seen[errorCandidate.id] = true
+    }
+    var intents = Native.intentRows(query, {
+      themes: root.nativeThemes,
+      states: root.nativeStates,
+      scoreFn: Fuzzy.score
+    })
+    for (var i = 0; i < intents.length; i++) {
+      var intentCandidate = root.nativeCandidateFromSpec(intents[i])
+      if (!seen[intentCandidate.id]) {
+        seen[intentCandidate.id] = true
+        rows.push(intentCandidate)
+      }
+    }
+    var matches = Native.search(root.nativeCommands, query, Fuzzy.score, root.configMaxResults())
+    for (i = 0; i < matches.length; i++) {
+      var commandCandidate = root.nativeCandidateForCommand(matches[i], 36 + matches[i].matchScore)
+      if (commandCandidate && !seen[commandCandidate.id]) {
+        seen[commandCandidate.id] = true
+        rows.push(commandCandidate)
+      }
+    }
+    return root.bestRows(rows, root.configMaxResults())
+  }
+
+
+  function nativeStateRunnerPath() {
+    return root.pluginSourceDir() + "/bin/native-state"
+  }
+
+  function loadNativeCatalog(force) {
+    if (nativeCatalogProc.running) return
+    if (root.nativeCatalogLoaded && !force) return
+    nativeCatalogProc.collected = ""
+    nativeCatalogProc.command = ["omarchy", "commands", "--json"]
+    nativeCatalogProc.running = true
+  }
+
+  function loadNativeThemes(force) {
+    if (nativeThemesProc.running) return
+    if (root.nativeThemes.length > 0 && !force) return
+    nativeThemesProc.collected = ""
+    nativeThemesProc.command = ["omarchy", "theme", "list"]
+    nativeThemesProc.running = true
+  }
+
+  function refreshNativeState() {
+    if (nativeStateProc.running) return
+    nativeStateProc.collected = ""
+    nativeStateProc.command = [root.nativeStateRunnerPath()]
+    nativeStateProc.running = true
+  }
+
   // -- external providers ---------------------------------------------------------
   //
   // Executables in the shipped/user provider directories receive the query
@@ -1132,7 +1321,7 @@ Item {
   readonly property var sourceLabels: ({
     calc: "Calculator", apps: "Apps", windows: "Windows", files: "Files",
     clipboard: "Clipboard", system: "System", web: "Web", ssh: "SSH",
-    run: "Shell", providers: "Provider"
+    run: "Shell", native: "Commands", providers: "Provider"
   })
 
   function buildSourceRegistry() {
@@ -1154,7 +1343,9 @@ Item {
       { id: "ssh", label: "SSH", order: 7,
         available: function(context) { return context.query.length >= 2 },
         collect: function(_parsed, context) { return root.sshRows(context.query) } },
-      { id: "providers", label: "Providers", order: 8,
+      { id: "native", label: "Commands", order: 8,
+        collect: function(_parsed, context) { return root.nativeRows(context.query) } },
+      { id: "providers", label: "Providers", order: 9,
         collect: function(_parsed, context) { return root.providerRowList(context.query) } }
     ])
     root.sourceRegistry = built.ok ? built.value : null
@@ -1328,6 +1519,14 @@ Item {
   }
 
   function currentMode() { return root.interactionMode }
+  function actionStatus() {
+    return JSON.stringify({
+      mode: root.interactionMode,
+      success: root.actionSucceeded,
+      message: root.actionMessage,
+      detail: root.actionDetail
+    })
+  }
 
   function objectIdAt(index) {
     var object = root.activeObject(Number(index))
@@ -1357,6 +1556,46 @@ Item {
       }
     }
     return JSON.stringify(matrix)
+  }
+
+  function nativeCatalogStatus() {
+    return JSON.stringify({
+      loaded: root.nativeCatalogLoaded,
+      count: root.nativeCommands.length,
+      error: root.nativeCatalogError,
+      themes: root.nativeThemes.length,
+      states: root.nativeStates
+    })
+  }
+
+  function nativeCommandCount() { return root.nativeCommands.length }
+
+  function nativePreview(query) {
+    var candidates = root.nativeRows(String(query || ""))
+    var preview = []
+    for (var i = 0; i < candidates.length; i++) {
+      var result = root.typedResultForCandidate(candidates[i])
+      if (!result) continue
+      var actions = []
+      for (var j = 0; j < result.actions.length; j++) actions.push(result.actions[j].id)
+      preview.push({ id: result.id, title: result.title, actions: actions,
+        confirm: result.actions.length > 0 && result.actions[0].confirm,
+        risk: result.actions.length > 0 ? result.actions[0].risk : "",
+        lifecycle: result.actions.length > 0 ? result.actions[0].lifecycle : "" })
+    }
+    return JSON.stringify(preview)
+  }
+
+  function enterNativeArgumentPreview(query) {
+    var candidates = root.nativeRows(String(query || ""))
+    if (candidates.length === 0) return "NoResult"
+    var result = root.typedResultForCandidate(candidates[0])
+    if (!result || result.actions.length === 0 || result.actions[0].arguments.length === 0)
+      return "NoArguments"
+    root.resetInteraction()
+    root.activeResult = result
+    root.chooseAction(result.actions[0])
+    return root.interactionMode
   }
 
   function hintFor(index) {
@@ -1545,6 +1784,15 @@ Item {
 
   function recordTypedUsage(result, action) {
     if (!result || !action || !root.learnableResultType(result.type)) return
+    var persistedValue = result.value.payload
+    if (result.source === "native") {
+      try {
+        var nativeUsageSpec = JSON.parse(String(persistedValue))
+        if (nativeUsageSpec.learnable !== true) return
+        persistedValue = String(nativeUsageSpec.route || "")
+      } catch (_nativeUsageError) { return }
+      if (root.usageKey("native", persistedValue) !== result.id) return
+    }
     var entry = root.usage[result.id] || ({ count: 0, result: ({}) })
     entry.count = (Number(entry.count) || 0) + 1
     entry.lastUsed = Date.now()
@@ -1557,7 +1805,7 @@ Item {
       appIcon: result.appIcon,
       title: result.title,
       subtitle: result.subtitle,
-      value: result.value.payload
+      value: persistedValue
     }
     root.usage[result.id] = entry
     root.saveUsage()
@@ -1575,8 +1823,77 @@ Item {
     root.rebuildInteractionModel()
   }
 
+  function executeNativeArgv(action, argv) {
+    if (action.lifecycle === "keepOpen") root.startCapturedAction(argv, false)
+    else {
+      root.cancel()
+      Util.execArgv(Execution.argvFor({
+        argv: argv,
+        lifecycle: action.lifecycle,
+        risk: action.risk
+      }))
+    }
+  }
+
   function executeBuiltin(action) {
     var result = root.activeResult
+    var payload = result && result.value ? String(result.value.payload || "") : ""
+    if (action.builtin === "reloadNativeCatalog") {
+      root.loadNativeCatalog(true)
+      root.showImmediateResult(true, "Reloading command catalog", root.nativeCatalogError)
+      return
+    }
+    if (action.builtin === "inspectNativeCommand") {
+      var inspectSpec
+      try { inspectSpec = JSON.parse(payload) } catch (_inspectError) { inspectSpec = ({}) }
+      var inspectLines = [
+        String(inspectSpec.route || "Unknown route"),
+        String(inspectSpec.args || ""),
+        String(inspectSpec.provenance || "")
+      ]
+      if (inspectSpec.examples && inspectSpec.examples.length > 0)
+        inspectLines.push("Example: " + inspectSpec.examples[0])
+      root.showImmediateResult(true, result.title, inspectLines.filter(function(line) { return !!line }).join("\n"))
+      return
+    }
+    if (action.builtin === "runNativeTemplate") {
+      var templateSpec
+      try { templateSpec = JSON.parse(payload) } catch (_templateError) {
+        root.showImmediateResult(false, "Invalid command metadata", "")
+        return
+      }
+      var templateArgv = (templateSpec.argv || []).slice()
+      var order = templateSpec.argumentOrder || []
+      for (var templateIndex = 0; templateIndex < order.length; templateIndex++) {
+        var argumentId = order[templateIndex]
+        var templateValue = String(root.argumentValues[argumentId] || "")
+        if (!templateValue) {
+          root.showImmediateResult(false, "Missing option", argumentId)
+          return
+        }
+        var valueMap = templateSpec.argumentValueMap && templateSpec.argumentValueMap[argumentId]
+        var resolvedValue = valueMap && Object.prototype.hasOwnProperty.call(valueMap, templateValue)
+          ? String(valueMap[templateValue]) : templateValue
+        if (resolvedValue) templateArgv.push(resolvedValue)
+      }
+      root.executeNativeArgv(action, templateArgv)
+      return
+    }
+    if (action.builtin === "runNativeWithArguments") {
+      var runSpec
+      try { runSpec = JSON.parse(payload) } catch (_runError) {
+        root.showImmediateResult(false, "Invalid command metadata", "")
+        return
+      }
+      var parsedArguments = Native.parseWords(String(root.argumentValues.arguments || ""))
+      if (!parsedArguments.ok || parsedArguments.value.length === 0) {
+        root.showImmediateResult(false, "Invalid arguments", parsedArguments.error || "Arguments are required")
+        return
+      }
+      var nativeArgv = (runSpec.argv || []).concat(parsedArguments.value)
+      root.executeNativeArgv(action, nativeArgv)
+      return
+    }
     if (action.builtin === "inspectLearning") {
       var learnedKeys = []
       for (var learnedKey in root.usage) learnedKeys.push(learnedKey)
@@ -1598,7 +1915,7 @@ Item {
       root.showImmediateResult(true, "Omnibox learning reset", "")
       return
     }
-    var payload = result && result.value ? String(result.value.payload || "") : ""
+
     if (action.builtin === "togglePin") {
       var entry = root.usage[result.id] || ({ count: 0, lastUsed: 0, result: ({}) })
       entry.pinned = !entry.pinned
@@ -1761,6 +2078,26 @@ Item {
     return root.interactionMode
   }
 
+  function formatCapturedDetail(ok, stdoutText, stderrText, exitCode) {
+    if (!ok) return String(stderrText || "").trim() || "Exit " + exitCode
+    var output = String(stdoutText || "").trim()
+    if (root.activeResult && root.activeResult.source === "native") {
+      try {
+        var spec = JSON.parse(String(root.activeResult.value.payload || "{}"))
+        if (spec.outputFormat === "reminders") {
+          var parsed = JSON.parse(output || "{}")
+          var reminders = parsed.reminders || []
+          if (reminders.length === 0) return "No active reminders"
+          var lines = []
+          for (var i = 0; i < Math.min(reminders.length, 8); i++)
+            lines.push(String(reminders[i].label || "Reminder") + " · " + String(reminders[i].remaining || ""))
+          return lines.join("\n")
+        }
+      } catch (_formatError) { }
+    }
+    return output
+  }
+
   function startCapturedAction(argv, _shellAction) {
     if (!Array.isArray(argv) || argv.length === 0) {
       root.showImmediateResult(false, "Action had no command", "")
@@ -1857,8 +2194,87 @@ Item {
           || actionProc.activeToken !== root.actionRunToken
           || root.interactionMode !== "Running") return
       var ok = exitCode === 0 && exitStatus === 0
-      var detail = ok ? actionProc.stdoutText.trim() : (actionProc.stderrText.trim() || "Exit " + exitCode)
+      var detail = root.formatCapturedDetail(
+        ok, actionProc.stdoutText, actionProc.stderrText, exitCode)
       root.showImmediateResult(ok, ok ? root.activeAction.title + " complete" : root.activeAction.title + " failed", detail)
+    }
+  }
+
+  Process {
+    id: nativeCatalogProc
+    property string collected: ""
+    stdout: SplitParser {
+      onRead: function(data) {
+        nativeCatalogProc.collected = Execution.boundedAppend(
+          nativeCatalogProc.collected, data + "\n", root.maxNativeCatalogBytes)
+      }
+    }
+    onExited: function(exitCode, exitStatus) {
+      if (exitCode !== 0 || exitStatus !== 0) {
+        root.nativeCatalogError = "Catalog exited " + exitCode
+        return
+      }
+      var parsed = Native.parseCatalog(nativeCatalogProc.collected)
+      if (!parsed.ok) {
+        root.nativeCatalogError = parsed.error
+        return
+      }
+      root.nativeCommands = parsed.value
+      root.nativeCatalogLoaded = true
+      root.nativeCatalogError = ""
+      if (root.opened && root.interactionMode === "Search") root.rebuildDisplay(true)
+    }
+  }
+
+  Process {
+    id: nativeThemesProc
+    property string collected: ""
+    stdout: SplitParser {
+      onRead: function(data) {
+        nativeThemesProc.collected = Execution.boundedAppend(
+          nativeThemesProc.collected, data + "\n", 65536)
+      }
+    }
+    onExited: function(exitCode, exitStatus) {
+      if (exitCode !== 0 || exitStatus !== 0) return
+      var lines = nativeThemesProc.collected.split("\n")
+      var themes = []
+      var seen = ({})
+      for (var i = 0; i < lines.length && themes.length < 256; i++) {
+        var theme = String(lines[i] || "").trim()
+        if (theme && !seen[theme]) {
+          seen[theme] = true
+          themes.push(theme)
+        }
+      }
+      if (themes.length > 0) root.nativeThemes = themes
+      if (root.opened && root.interactionMode === "Search") root.rebuildDisplay(true)
+    }
+  }
+
+  Process {
+    id: nativeStateProc
+    property string collected: ""
+    stdout: SplitParser {
+      onRead: function(data) {
+        nativeStateProc.collected = Execution.boundedAppend(
+          nativeStateProc.collected, data + "\n", 16384)
+      }
+    }
+    onExited: function(exitCode, exitStatus) {
+      if (exitCode !== 0 || exitStatus !== 0) return
+      var next = ({})
+      for (var key in root.nativeStates) next[key] = root.nativeStates[key]
+      var lines = nativeStateProc.collected.split("\n")
+      for (var i = 0; i < lines.length; i++) {
+        var tab = lines[i].indexOf("\t")
+        if (tab <= 0) continue
+        var stateKey = lines[i].slice(0, tab)
+        var stateValue = lines[i].slice(tab + 1, tab + 257)
+        if (/^[a-z0-9-]+$/.test(stateKey) && stateValue) next[stateKey] = stateValue
+      }
+      root.nativeStates = next
+      if (root.opened && root.interactionMode === "Search") root.rebuildDisplay(true)
     }
   }
 
@@ -2181,6 +2597,9 @@ Item {
 
   Component.onCompleted: {
     root.buildSourceRegistry()
+    root.loadNativeCatalog(false)
+    root.loadNativeThemes(false)
+    root.refreshNativeState()
     root.scanProviders()
     root.startProviderWatcher()
     root.refreshWindows()

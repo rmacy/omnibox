@@ -6,7 +6,7 @@
   "type": "commonjs",
   "scripts": {
     "test:js": "node --test tests/test-*.js",
-    "test:shell": "tests/test-provider-runner.sh && tests/test-search-files.sh && tests/test-write-usage.sh && tests/test-packages-provider.sh",
+    "test:shell": "tests/test-provider-runner.sh && tests/test-search-files.sh && tests/test-write-usage.sh && tests/test-packages-provider.sh && tests/test-native-state.sh",
     "test:qml": "tests/test-qml-smoke.sh",
     "test": "npm run test:js && npm run test:shell && npm run test:qml",
     "coverage": "npx --yes c8@12.0.0 --all --include='js/*.js' --reporter=text --reporter=json-summary --check-coverage --lines=90 --functions=90 --branches=90 --statements=90 npm run test:js"

@@ -20,6 +20,48 @@ matrix=$(omarchy-shell shell call bitr0t.omnibox stageAActionMatrix '')
 [[ $matrix == *'"ssh":["ssh.connect","ssh.copy-host"'* ]]
 [[ $matrix == *'"providers":["provider.run"]'* ]]
 
+native_status=
+for _ in {1..20}; do
+  native_status=$(omarchy-shell shell call bitr0t.omnibox nativeCatalogStatus '')
+  [[ $native_status == *'"loaded":true'* ]] && break
+  sleep 0.1
+done
+(( $(omarchy-shell shell call bitr0t.omnibox nativeCommandCount '') > 100 ))
+[[ $native_status == *'"themes":'* ]]
+[[ $native_status == *'"idle":'* ]]
+[[ $native_status == *'"omasnap":'* ]]
+
+reminder_preview=$(omarchy-shell shell call bitr0t.omnibox nativePreview 'remind 20 Check oven')
+[[ $reminder_preview == *'Remind in 20 minutes: Check oven'* ]]
+[[ $reminder_preview == *'"actions":["native.run","native.inspect"]'* ]]
+theme_preview=$(omarchy-shell shell call bitr0t.omnibox nativePreview 'theme bauhaus')
+[[ $theme_preview == *'Apply theme Bauhaus Instrument'* ]]
+[[ $theme_preview == *'"confirm":true'* ]]
+version_preview=$(omarchy-shell shell call bitr0t.omnibox nativePreview 'installed omarchy version')
+[[ $version_preview == *'Print the installed Omarchy version'* ]]
+[[ $version_preview == *'learning.pin'* ]]
+update_preview=$(omarchy-shell shell call bitr0t.omnibox nativePreview 'Update Omarchy and system packages')
+[[ $update_preview == *'"risk":"privileged","lifecycle":"terminal"'* ]]
+screenshot_preview=$(omarchy-shell shell call bitr0t.omnibox nativePreview screenshot)
+[[ $screenshot_preview == *'native.run-template'* ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox enterNativeArgumentPreview screenshot) == Arguments ]]
+omarchy-shell shell call bitr0t.omnibox activateAt 0 >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Arguments ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+
+[[ $(omarchy-shell shell call bitr0t.omnibox enterNativeArgumentPreview 'Set the default audio output and move active streams') == Arguments ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+
+omarchy-shell shell summon bitr0t.omnibox '{"query":"show reminders"}' >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox objectIdAt 0) == native:* ]]
+omarchy-shell shell call bitr0t.omnibox activateAt 0 >/dev/null
+sleep 0.2
+[[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Result ]]
+reminder_status=$(omarchy-shell shell call bitr0t.omnibox actionStatus '')
+[[ $reminder_status == *'"success":true'* ]]
+[[ $reminder_status != *'"detail":""'* ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+
 [[ $(omarchy-shell shell summon bitr0t.omnibox '{"query":"=7*6"}') == ok ]]
 [[ $(omarchy-shell shell call bitr0t.omnibox currentQuery '') == '=7*6' ]]
 [[ $(omarchy-shell shell call bitr0t.omnibox hintFor 0) == 'Copy result · Tab actions' ]]

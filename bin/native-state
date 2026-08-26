@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+set -uo pipefail
+
+clean() {
+  tr '\t\r\n' '   ' | sed -E 's/[[:space:]]+$//' | cut -c1-256
+}
+
+if idle=$(omarchy toggle idle --status 2>/dev/null); then
+  enabled=$(jq -r 'if .enabled == true then "idle allowed" else "stay awake" end' <<<"$idle" 2>/dev/null || true)
+  [[ -n $enabled ]] && printf 'idle\t%s\n' "$enabled"
+fi
+
+if nightlight=$(omarchy toggle nightlight --status 2>/dev/null); then
+  state=$(jq -r 'if .enabled == true then "on (" + ((.temperature // 0) | tostring) + "K)" else "off" end' <<<"$nightlight" 2>/dev/null || true)
+  [[ -n $state ]] && printf 'nightlight\t%s\n' "$state"
+fi
+
+if omarchy bluetooth power is-on >/dev/null 2>&1; then
+  printf 'bluetooth\ton\n'
+else
+  printf 'bluetooth\toff\n'
+fi
+
+if omarchy toggle enabled bar-off >/dev/null 2>&1; then
+  printf 'bar\thidden\n'
+else
+  printf 'bar\tvisible\n'
+fi
+
+omasnap_command=${OMNIBOX_OMASNAP_COMMAND:-omasnap}
+if command -v "$omasnap_command" >/dev/null 2>&1; then
+  printf 'omasnap\tavailable\n'
+else
+  printf 'omasnap\tunavailable\n'
+fi
+
+brightness=$(omarchy brightness display --no-osd 2>/dev/null | clean || true)
+[[ -n $brightness ]] && printf 'brightness\t%s\n' "$brightness"
+
+text_size=$(omarchy display text size 2>/dev/null | clean || true)
+[[ -n $text_size ]] && printf 'text-size\t%s\n' "$text_size"
