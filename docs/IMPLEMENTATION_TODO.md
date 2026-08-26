@@ -464,7 +464,7 @@ Omnibox 2.0 is complete only when all of the following are true:
   readable at the target display scale.
 - [x] **Run `npm test` and `npm run coverage`.** Acceptance: all tests pass and
   statements, branches, functions, and lines remain at least 90%.
-- [ ] **Run `omarchy-plugin-validate .`.** Acceptance: validator exits zero from
+- [x] **Run `omarchy-plugin-validate .`.** Acceptance: validator exits zero from
   a clean checkout.
 - [x] **Run the live plugin IPC smoke after shell restart.** Acceptance:
   `omarchy-shell shell call bitr0t.omnibox ping '{}'` returns `ok` and the QML
@@ -491,10 +491,10 @@ Omnibox 2.0 is complete only when all of the following are true:
   Omarchy configuration.
 - [x] **Update manifest version for the clean provider/API cutover.** Acceptance:
   version communicates the breaking protocol change and matches release notes.
-- [ ] **Validate a clean public install.** Acceptance: clone/install from
+- [x] **Validate a clean public install.** Acceptance: clone/install from
   `https://github.com/rmacy/omnibox`, enable, bind/summon, test one action flow,
   and remove/restore stock behavior successfully.
-- [ ] **Commit and push as the configured user identity.** Acceptance: commit is
+- [x] **Commit and push as the configured user identity.** Acceptance: commit is
   authored by the configured Ryan identity, contains no agent attribution, CI
   passes, and the public branch contains both code and documentation.
 
