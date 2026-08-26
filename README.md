@@ -109,7 +109,8 @@ Then check out the required release/stage and restart only the shell:
 | Projects and workflows | `0a20a05` |
 | Provider v2 platform | `e642ed9` |
 | Omnibox 2.0 | `v2.0.0` |
-| Current default-agent release | `v2.1.0` |
+| Default-agent delegation | `v2.1.0` |
+| Current confirmation layout fix | `v2.1.1` |
 
 ```bash
 git -C ~/.config/omarchy/plugins/bitr0t.omnibox checkout v1.1.0
