@@ -84,6 +84,23 @@ if (( $(omarchy-shell shell call bitr0t.omnibox configuredWorkflowCount '') > 0 
   omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
 fi
 
+provider_status=$(omarchy-shell shell call bitr0t.omnibox providerStatus '')
+[[ $provider_status == *'bitr0t.packages'* ]]
+provider_request=$(omarchy-shell shell call bitr0t.omnibox providerRequestPreview 'pkg jq')
+[[ $provider_request == *'"body":"jq"'* ]]
+[[ $provider_request != *clipboard* ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox providerRequestPreview ghost) == '[]' ]]
+omarchy-shell shell call bitr0t.omnibox setInteractionQuery 'pkg jq' >/dev/null
+sleep 1
+(( $(omarchy-shell shell call bitr0t.omnibox providerResultCount '') > 0 ))
+[[ $(omarchy-shell shell call bitr0t.omnibox providerResultIdAt 0) == provider:bitr0t.packages:* ]]
+omarchy-shell shell call bitr0t.omnibox setInteractionQuery ghost >/dev/null
+sleep 1
+(( $(omarchy-shell shell call bitr0t.omnibox providerResultCount '') == 0 ))
+[[ $(omarchy-shell shell call bitr0t.omnibox enterProviderConfirmationPreview '') == Confirm ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox detailAt 0) == *'Provider test.destructive'* ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+
 omarchy-shell shell summon bitr0t.omnibox '{"query":"show reminders"}' >/dev/null
 [[ $(omarchy-shell shell call bitr0t.omnibox objectIdAt 0) == native:* ]]
 omarchy-shell shell call bitr0t.omnibox activateAt 0 >/dev/null

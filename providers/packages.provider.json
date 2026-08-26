@@ -1,0 +1,15 @@
+{
+  "protocol": 2,
+  "id": "bitr0t.packages",
+  "title": "Installed Packages",
+  "executable": "packages",
+  "enabled": true,
+  "queryPolicy": "triggered",
+  "triggers": ["pkg", "package"],
+  "context": [],
+  "capabilities": ["query"],
+  "timeoutMs": 900,
+  "killAfterMs": 200,
+  "maxRows": 8,
+  "maxLineBytes": 16384
+}

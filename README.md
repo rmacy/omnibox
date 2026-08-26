@@ -21,7 +21,7 @@ ranked results from ten sources as you type:
 | **SSH** | Hosts from `~/.ssh/config`; Enter opens an `ssh` session in your terminal |
 | **Projects** | Search opt-in Git repositories; resume, edit, open a terminal, scope file search, copy path, or open the remote |
 | **Workflows** | Run validated registered-action workflows with typed project arguments, progress, cancellation, and stop-on-failure |
-| **Providers** | Executable extensions that answer the query with TSV rows (see below) |
+| **Providers** | Manifest-gated trusted executables that stream typed protocol-2 NDJSON results and argv actions |
 
 Screenshot actions use `omasnap` when it is installed. Otherwise they fall back
 to Omarchy’s system capture command. Mode and edit/copy/save are selected inside
@@ -187,40 +187,84 @@ Optional: `~/.config/omarchy/extensions/omnibox.jsonc` (hot-reloads):
 
 ## Writing providers
 
-Providers make Omnibox a platform. Drop an executable file into either:
+Providers are **trusted, unsandboxed executable code**. Time, row, and byte
+limits constrain resource use; they do not restrict filesystem access, network
+access, or data exfiltration. Review a provider and its manifest before enabling
+it.
 
-- `<plugin dir>/providers/` (shipped providers), or
-- `~/.config/omarchy/omnibox/providers/` (your own; same basename wins)
+Protocol 2 requires an executable plus a sibling `*.provider.json` manifest in:
 
-A provider receives the query as `$1` and prints up to a handful of rows, one
-per line, tab-separated:
+- `<plugin dir>/providers/` for shipped providers, or
+- `~/.config/omarchy/omnibox/providers/` for user providers.
 
+A valid user manifest with the same provider `id` replaces the shipped one.
+Example `notes.provider.json`:
+
+```json
+{
+  "protocol": 2,
+  "id": "local.notes",
+  "title": "Notes",
+  "executable": "notes",
+  "enabled": true,
+  "queryPolicy": "triggered",
+  "triggers": ["note", "notes"],
+  "context": [],
+  "capabilities": ["query"],
+  "timeoutMs": 900,
+  "killAfterMs": 200,
+  "maxRows": 8,
+  "maxLineBytes": 16384
+}
 ```
-label<TAB>detail<TAB>action<TAB>icon
+
+Triggered providers run only when the query equals a trigger or starts with
+`trigger ` / `trigger:`. The executable receives the trigger-stripped query as
+`$1` and a JSON object containing only manifest-allowlisted context fields as
+`$2`. Clipboard and file contents are never provider context.
+
+Providers print one compact protocol-2 JSON result per line:
+
+```json
+{"protocol":2,"id":"note:daily","type":"provider","title":"Daily note","subtitle":"~/Notes/daily.md","icon":"󰈙","value":{"path":"/home/me/Notes/daily.md"},"actions":[{"id":"note.open","title":"Open","executor":"argv","argv":["xdg-open","/home/me/Notes/daily.md"],"lifecycle":"close","risk":"safe"}]}
 ```
 
-- `label` — row title (required)
-- `detail` — subtitle under the label (may be empty, tab required)
-- `action` — shell command run on Enter (required)
-- `icon` — optional Nerd Font glyph
+Provider actions must use an argv array. Shell action strings are rejected.
+Destructive actions additionally require `"risk":"destructive"` and
+`"confirm":true`. Every result is namespaced as
+`provider:<provider-id>:<result-id>` and shows provider provenance in the UI.
+Malformed lines reject independently; valid rows from the same or another
+provider continue streaming.
 
-Providers run concurrently on every debounced query. Each gets 0.9 seconds,
-then a 0.2-second SIGKILL grace; output is capped to 8 rows and 16 KiB per
-line. Completed providers stream into the launcher immediately, then all
-provider rows are fuzzy-ranked together before `maxResults` is applied. Keep
-providers fast. Minimal example:
+`queryPolicy: "unrestricted"` is denied unless the provider ID is also listed
+explicitly in user configuration:
 
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-q=${1:-}
-[[ -n $q ]] || exit 0
-printf 'Search notes for %s\tPersonal notes\tmy-notes-search %q\t󰈙\n' \"$q\" \"$q\"
+```jsonc
+{
+  "providers": {
+    "unrestricted": ["local.explicitly-reviewed-provider"]
+  }
+}
 ```
 
-The shipped `providers/packages` provider searches installed packages from a
-mode-`0600` cache. It refreshes that cache only when pacman’s local database
-changes, rather than running `pacman -Q` for every keystroke.
+### Migrating a protocol-1 TSV provider
+
+| Protocol 1 | Protocol 2 |
+|---|---|
+| executable file only | executable plus `*.provider.json` |
+| every query passed as `$1` | manifest trigger policy; `$1` is trigger-stripped |
+| `label<TAB>detail<TAB>action<TAB>icon` | one typed JSON object per line |
+| opaque shell `action` | bounded `actions[]` with literal `argv[]` |
+| positional/derived identity | stable provider and result IDs |
+| no provenance/risk metadata | namespaced provenance, lifecycle, risk, confirmation |
+
+There is no automatic TSV compatibility path. Keep the previous plugin release
+checked out while converting a custom provider, or restore that release to roll
+back.
+
+The shipped `providers/packages` provider is triggered with `pkg` or `package`
+(for example, `pkg jq`). It searches a mode-`0600` installed-package cache and
+refreshes only when pacman’s local database changes.
 
 ## Product roadmap
 

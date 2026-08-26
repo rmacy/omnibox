@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Omnibox provider: search a cached installed-package inventory.
-# Protocol: $1 = query; stdout rows: label<TAB>detail<TAB>action<TAB>icon
+# Omnibox provider v2: search a cached installed-package inventory.
+# argv: $1 = trigger-stripped query, $2 = allowlisted context JSON.
+# stdout: one typed protocol-2 JSON result per line.
 set -euo pipefail
 
 q=${1:-}
 [[ -n $q ]] || exit 0
 command -v pacman >/dev/null 2>&1 || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
 
 cache_dir=${XDG_CACHE_HOME:-$HOME/.cache}/omnibox
 cache_file=$cache_dir/packages.tsv
@@ -32,8 +34,32 @@ chmod 700 -- "$cache_dir"
 ) 9>"$lock_file"
 
 [[ -r $cache_file ]] || exit 0
-LC_ALL=C awk -v q="$q" '
-  index(tolower($1), tolower(q)) {
-    printf "%s\t%s · installed\txdg-terminal-exec -- bash -lc \047pacman -Qi %s; read -n 1 -s\047\t󰣇\n", $1, $2, $1
-    if (++n >= 8) exit
-  }' "$cache_file"
+count=0
+while read -r name version; do
+  [[ ${name,,} == *${q,,}* ]] || continue
+  identity=$(printf '%s' "$name" | sha256sum | cut -c1-16)
+  jq -cn \
+    --arg id "package:$identity" \
+    --arg title "$name" \
+    --arg subtitle "$version · installed" \
+    --arg package "$name" \
+    '{
+      protocol:2,
+      id:$id,
+      type:"provider",
+      title:$title,
+      subtitle:$subtitle,
+      icon:"󰣇",
+      value:{package:$package},
+      actions:[{
+        id:"package.info",
+        title:"Package info",
+        executor:"argv",
+        argv:["xdg-terminal-exec","--hold","--","pacman","-Qi","--",$package],
+        lifecycle:"close",
+        risk:"safe"
+      }]
+    }'
+  count=$((count + 1))
+  (( count < 8 )) || break
+done <"$cache_file"

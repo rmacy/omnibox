@@ -514,20 +514,19 @@ Requirements:
 
 ### FR8 — Typed provider protocol
 
-The current provider protocol executes every discovered provider for each
-non-empty non-shell query and passes the raw query as `$1`; time and output
-limits constrain resources but do not sandbox provider filesystem or network
+The pre-v2 provider protocol executed every discovered provider for each
+non-empty non-shell query and passed the raw query as `$1`; time and output
+limits constrained resources but did not sandbox provider filesystem or network
 access.[^provider-query][^provider-runner]
 
-Omnibox 2.0 must define a versioned newline-delimited JSON protocol with stable
-results and typed actions. The shipped provider and documentation must migrate
-to it; the obsolete TSV execution path must be removed in the same major
-cutover.
+Protocol 2 is a clean cutover to manifest-gated newline-delimited JSON with
+stable namespaced results and typed argv actions. Trigger policies and explicit
+unrestricted-provider allowlisting decide whether a provider receives a query.
 
-**Proposed provider output — illustrative protocol, concrete argv:**
+**Implemented provider output — concrete argv:**
 
 ```json
-{"protocol":2,"id":"project:omnibox","type":"project","title":"Omnibox","subtitle":"~/.config/omarchy/plugins/bitr0t.omnibox","value":{"path":"/home/ryan/.config/omarchy/plugins/bitr0t.omnibox"},"actions":[{"id":"project.edit","title":"Open in editor","executor":"argv","argv":["omarchy","launch","editor","/home/ryan/.config/omarchy/plugins/bitr0t.omnibox"],"close":true},{"id":"project.send","title":"Send with Taildrop","executor":"next","next":{"type":"tailscale-device"}}]}
+{"protocol":2,"id":"project:omnibox","type":"project","title":"Omnibox","subtitle":"~/.config/omarchy/plugins/bitr0t.omnibox","value":{"path":"/home/ryan/.config/omarchy/plugins/bitr0t.omnibox"},"actions":[{"id":"project.edit","title":"Open in editor","executor":"argv","argv":["omarchy","launch","editor","/home/ryan/.config/omarchy/plugins/bitr0t.omnibox"],"lifecycle":"close","risk":"safe"}]}
 ```
 
 Taildrop’s installed command contract accepts `<machine> [file...]`; the
@@ -756,14 +755,16 @@ Resolved through the Stage A live prototype:
    next/previous monitor, toggle floating, tiled fullscreen, and confirmed
    close through Omarchy’s Hyprland Lua dispatcher surface.
 
-Still to resolve in the matching delivery stages:
+Resolved through the Stage D implementation:
 
-5. Provider v2 is a major-version clean cutover or a separately named
-   executable directory during one release. The final state must have one
-   protocol path, not indefinite dual support.
-6. Aggregate metrics are local-only; the default enabled/opt-in policy is
-   resolved with the metrics implementation. Content remains forbidden either
-   way.
+5. Provider v2 is a major-version clean cutover using sibling
+   `*.provider.json` manifests and typed NDJSON. There is no runtime TSV or
+   dual-protocol compatibility path.
+
+Still to resolve with the metrics implementation:
+
+6. Aggregate metrics are local-only; the default enabled/opt-in policy remains
+   open. Content is forbidden either way.
 
 ## 15. Source citations
 

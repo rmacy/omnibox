@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+(( $# == 2 )) || {
+  printf 'usage: %s <shipped-dir> <user-dir>\n' "${0##*/}" >&2
+  exit 2
+}
+command -v jq >/dev/null 2>&1 || exit 0
+count=0
+for directory in "$1" "$2"; do
+  [[ $directory == /* && -d $directory ]] || continue
+  directory=$(realpath -e -- "$directory" 2>/dev/null || true)
+  [[ -n $directory ]] || continue
+  while IFS= read -r manifest; do
+    [[ -f $manifest && ! -L $manifest ]] || continue
+    row=$(jq -ce --arg sourceDir "$directory" --arg manifestPath "$manifest" '
+      select(type == "object") | {sourceDir:$sourceDir,manifestPath:$manifestPath,manifest:.}
+    ' "$manifest" 2>/dev/null || true)
+    [[ -n $row ]] || continue
+    printf '%s\n' "$row"
+    count=$((count + 1))
+    (( count < 128 )) || exit 0
+  done < <(printf '%s\n' "$directory"/*.provider.json | LC_ALL=C sort)
+done

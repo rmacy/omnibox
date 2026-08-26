@@ -19,15 +19,16 @@ chmod +x "$root/bin/pacman"
 
 provider=${BASH_SOURCE[0]%/*}/../providers/packages
 env_args=(HOME="$root/home" XDG_CACHE_HOME="$root/cache" PACMAN_COUNTER="$counter" OMNIBOX_PACMAN_DB="$root/pacman-db" PATH="$root/bin:$PATH")
-first=$(env "${env_args[@]}" "$provider" probe)
+first=$(env "${env_args[@]}" "$provider" probe '{}')
 [[ $(printf '%s\n' "$first" | wc -l) -eq 8 ]]
+jq -e -s 'length == 8 and all(.[]; .protocol == 2 and .type == "provider" and .actions[0].executor == "argv")' <<<"$first" >/dev/null
 [[ $(cat "$counter") == 1 ]]
 cache=$root/cache/omnibox/packages.tsv
 [[ $(stat -c %a "$root/cache/omnibox") == 700 ]]
 [[ $(stat -c %a "$cache") == 600 ]]
 
-second=$(env "${env_args[@]}" "$provider" probe-pkg-9)
-[[ $second == probe-pkg-9$'\t'* ]]
+second=$(env "${env_args[@]}" "$provider" probe-pkg-9 '{}')
+[[ $(jq -r '.title' <<<"$second") == probe-pkg-9 ]]
 [[ $(cat "$counter") == 1 ]]
 
 touch -d @0 "$cache"

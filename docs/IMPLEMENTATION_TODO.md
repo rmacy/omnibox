@@ -342,62 +342,62 @@ Omnibox 2.0 is complete only when all of the following are true:
 
 ### D0 — Provider trust model
 
-- [ ] **Document that providers are unsandboxed executable code.** Acceptance:
+- [x] **Document that providers are unsandboxed executable code.** Acceptance:
   README and provider docs state that current timeout/output bounds do not
   restrict filesystem or network access.
-- [ ] **Define a versioned provider manifest.** Acceptance: protocol, stable ID,
+- [x] **Define a versioned provider manifest.** Acceptance: protocol, stable ID,
   executable path, triggers/prefix, capabilities, query policy, context fields,
   timeout, and limits validate before execution.
-- [ ] **Require explicit enablement for unrestricted-query providers.**
+- [x] **Require explicit enablement for unrestricted-query providers.**
   Acceptance: a provider cannot receive every query merely by being executable
   in a directory.
-- [ ] **Expose provider provenance on every result and confirmation.**
+- [x] **Expose provider provenance on every result and confirmation.**
   Acceptance: the user can identify which executable supplied an action.
-- [ ] **Define allowed context fields.** Acceptance: clipboard/file contents and
+- [x] **Define allowed context fields.** Acceptance: clipboard/file contents and
   raw prior arguments are absent by default; requested metadata is minimized to
   the manifest allowlist.
 
 ### D1 — NDJSON protocol and runner
 
-- [ ] **Specify the provider v2 NDJSON schema with byte/field/action limits.**
+- [x] **Specify the provider v2 NDJSON schema with byte/field/action limits.**
   Acceptance: required Result/Action fields, executor kinds, argv bounds, and
   unknown-field behavior are documented and fixture-tested.
-- [ ] **Update `bin/run-providers` to select providers by trigger policy.**
+- [x] **Update `bin/run-providers` to select providers by trigger policy.**
   Acceptance: nonmatching providers do not execute; matching providers remain
   concurrent, timed out, kill-bounded, row-bounded, and byte-bounded.
-- [ ] **Parse each provider line independently.** Acceptance: malformed JSON
+- [x] **Parse each provider line independently.** Acceptance: malformed JSON
   rejects one row without discarding valid rows from that provider or mutating
   another provider’s state.
-- [ ] **Validate typed provider actions before display.** Acceptance: invalid
+- [x] **Validate typed provider actions before display.** Acceptance: invalid
   IDs, executor kinds, argv, next types, risk, or lifecycle fields reject the
   action/result with a bounded diagnostic.
-- [ ] **Prevent providers from overriding first-party IDs or actions.**
+- [x] **Prevent providers from overriding first-party IDs or actions.**
   Acceptance: provider namespace is mandatory and collision fixtures fail
   closed.
-- [ ] **Preserve latest-request-wins streaming.** Acceptance: completed provider
+- [x] **Preserve latest-request-wins streaming.** Acceptance: completed provider
   batches appear incrementally; stale query batches never publish.
-- [ ] **Add provider action confirmation and provenance.** Acceptance: shell,
+- [x] **Add provider action confirmation and provenance.** Acceptance: shell,
   remote, destructive, and privileged claims follow core policy rather than
   provider preference alone.
 
 ### D2 — Clean cutover
 
-- [ ] **Migrate the shipped packages provider to v2.** Acceptance: package search
+- [x] **Migrate the shipped packages provider to v2.** Acceptance: package search
   retains cache invalidation, mode `0600`, bounds, ranking, and test coverage.
-- [ ] **Migrate provider documentation and examples to manifests plus NDJSON.**
+- [x] **Migrate provider documentation and examples to manifests plus NDJSON.**
   Acceptance: every copied example validates and runs in the live plugin.
-- [ ] **Provide an explicit user migration note for custom TSV providers.**
+- [x] **Provide an explicit user migration note for custom TSV providers.**
   Acceptance: old/new field mapping and rollback to the prior plugin release are
   documented without claiming automatic conversion.
-- [ ] **Remove the temporary Stage A typed adapter and TSV parser.** Acceptance:
+- [x] **Remove the temporary Stage A typed adapter and TSV parser.** Acceptance:
   no code path accepts `label<TAB>detail<TAB>action`; no dual protocol remains.
-- [ ] **Remove obsolete tests and fixtures only after v2 replacements defend the
+- [x] **Remove obsolete tests and fixtures only after v2 replacements defend the
   same behavior.** Acceptance: coverage does not fall and validator accepts the
   final tree.
 
 ### Stage D gate
 
-- [ ] **Pass the Extension Platform gate.** Observable result: manifests gate
+- [x] **Pass the Extension Platform gate.** Observable result: manifests gate
   provider invocation; v2 typed actions stream safely with provenance; malicious
   fixtures remain bounded; shipped provider and docs use v2; TSV execution is
   absent.

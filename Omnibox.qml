@@ -11,6 +11,7 @@ import "js/Actions.js" as Actions
 import "js/Execution.js" as Execution
 import "js/Flow.js" as Flow
 import "js/Native.js" as Native
+import "js/Provider.js" as Provider
 import "js/Query.js" as Query
 import "js/Ranking.js" as Ranking
 import "js/Registry.js" as Registry
@@ -20,9 +21,8 @@ import "js/Workflows.js" as Workflows
 //
 // One box for everything: apps, open windows, files, math, web search,
 // clipboard history, SSH hosts, shell commands, and the Omarchy system
-// actions — ranked by fuzzy match and learned usage. External providers
-// (executables that answer a query with TSV rows) extend it without
-// touching this file.
+// actions — ranked by fuzzy match and learned usage. Explicitly enabled,
+// manifest-gated protocol-2 providers extend it with typed NDJSON results.
 Item {
   id: root
 
@@ -167,7 +167,7 @@ Item {
     if (!hadQuery) {
       root.querySerial += 1
       root.fileRows = []
-      root.providerRows = ({})
+      root.providerRows = []
       root.stopAsyncSearch()
     }
   }
@@ -179,6 +179,7 @@ Item {
   //   maxResults per-source row cap
   //   projects   opt-in roots/depth/cap for project discovery
   //   workflows  deterministic registered-action workflows
+  //   providers  explicit unrestricted-query provider allowlist
 
   property var config: ({})
   property string configError: ""
@@ -196,7 +197,8 @@ Item {
     ],
     "maxResults": 8,
     "projects": { "roots": [], "maxDepth": 4, "maxProjects": 200 },
-    "workflows": []
+    "workflows": [],
+    "providers": { "unrestricted": [] }
   })
 
   function configEngines() {
@@ -246,6 +248,18 @@ Item {
     return Array.isArray(root.config.workflows) ? root.config.workflows : []
   }
 
+  function configUnrestrictedProviders() {
+    var values = root.config.providers && root.config.providers.unrestricted
+    if (!Array.isArray(values)) return []
+    var allowed = []
+    for (var i = 0; i < values.length && allowed.length < 64; i++) {
+      var id = String(values[i] || "")
+      if (/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id) && allowed.indexOf(id) < 0)
+        allowed.push(id)
+    }
+    return allowed
+  }
+
   function applyConfig(value) {
     if (!value || typeof value !== "object" || Array.isArray(value))
       throw new Error("Config root must be an object")
@@ -253,9 +267,10 @@ Item {
     root.configError = ""
     root.querySerial += 1
     root.fileRows = []
-    root.providerRows = ({})
+    root.providerRows = []
     root.stopAsyncSearch()
     root.configureProjects()
+    root.scanProviders()
     if (!root.opened) return
     root.rebuildDisplay()
     var query = root.currentQuery()
@@ -263,9 +278,8 @@ Item {
   }
 
   // ----------------------------------------------------------------- usage
-  // Learned ranking: ~/.local/state/omnibox/usage.json maps a stable row
-  // key to {count, lastUsed, row}, where row is a snapshot that can be
-  // re-shown as a favorite when the box opens empty.
+  // Versioned local ranking state stores only allowlisted stable targets,
+  // action IDs, aliases, counts, recency, and pin state.
 
   property var usage: ({})
   property string usagePath: Quickshell.env("HOME") + "/.local/state/omnibox/usage.json"
@@ -603,7 +617,7 @@ Item {
   property var clipEntries: []
   property var providerList: []        // [{name, path}]
   property var fileRows: []            // last fd batch (absolute paths)
-  property var providerRows: ({})      // provider name -> parsed rows
+  property var providerRows: []            // validated protocol-2 provider results
   property var appCandidates: []
   property var sourceRegistry: null
   property bool appCandidatesReady: false
@@ -725,6 +739,24 @@ Item {
     var id = root.resultIdForCandidate(candidate)
     var type = root.resultTypeForCandidate(candidate)
     var payload = String(candidate.value === undefined || candidate.value === null ? "" : candidate.value)
+    if (candidate.behavior === "providerV2") {
+      var providerResult
+      try { providerResult = JSON.parse(payload) } catch (_providerCandidateError) { return null }
+      var providerChecked = Actions.makeResult({
+        id: providerResult.id,
+        type: providerResult.type,
+        source: "providers",
+        title: providerResult.title,
+        subtitle: providerResult.subtitle || "",
+        icon: providerResult.icon || "",
+        appIcon: providerResult.appIcon || "",
+        value: providerResult.value,
+        matchScore: Number(candidate.matchScore) || 0,
+        aliases: providerResult.aliases || [],
+        actions: providerResult.actions || []
+      })
+      return providerChecked.ok ? providerChecked.value : null
+    }
     if (type === "window" && !/^0x[0-9a-fA-F]+$/.test(payload)) return null
     var allowLearning = true
     var actions = []
@@ -1481,12 +1513,11 @@ Item {
     return root.bestRows(rows, root.configMaxResults())
   }
 
-  // -- external providers ---------------------------------------------------------
+  // -- external providers v2 -------------------------------------------------
   //
-  // Executables in the shipped/user provider directories receive the query
-  // as $1 and print TSV rows: label\tdetail\taction[\ticon].
-  // A tracked helper runs them concurrently, enforces TERM+KILL deadlines,
-  // bounds output, and streams each completed provider batch back immediately.
+  // Providers are trusted, explicitly enabled executables. Versioned manifests
+  // gate query delivery and context. Providers emit typed NDJSON rows; the
+  // runner bounds time/output and the QML contract validates every action.
 
   property string userProvidersDir: Quickshell.env("HOME") + "/.config/omarchy/omnibox/providers"
 
@@ -1498,6 +1529,10 @@ Item {
     return root.pluginSourceDir() + "/bin/run-providers"
   }
 
+  function providerScannerPath() {
+    return root.pluginSourceDir() + "/bin/scan-providers"
+  }
+
   function scanProviders() {
     scanProc.pending = true
     if (!scanProc.running) root.startPendingProviderScan()
@@ -1507,11 +1542,7 @@ Item {
     if (!scanProc.pending || scanProc.running) return
     scanProc.pending = false
     scanProc.collected = ""
-    scanProc.command = ["bash", "-lc",
-      "for dir in " + Util.shellQuote(root.pluginProvidersDir()) + " " + Util.shellQuote(root.userProvidersDir) + "; do "
-      + "[[ -d $dir ]] || continue; "
-      + "for f in \"$dir\"/*; do [[ -f $f && -x $f ]] || continue; printf '%s\\t%s\\n' \"${f##*/}\" \"$f\"; done; "
-      + "done"]
+    scanProc.command = [root.providerScannerPath(), root.pluginProvidersDir(), root.userProvidersDir]
     scanProc.running = true
   }
 
@@ -1524,9 +1555,27 @@ Item {
     providerWatchProc.running = true
   }
 
+  function providerContext() {
+    var focused = null
+    for (var i = 0; i < root.windows.length; i++) {
+      if (Number(root.windows[i].focusHistoryID) === 0) {
+        focused = root.windows[i]
+        break
+      }
+    }
+    return {
+      focusedWindowClass: String(focused && focused.class || ""),
+      focusedWindowTitle: String(focused && focused.title || ""),
+      workspace: String(focused && focused.workspace
+        && (focused.workspace.name || focused.workspace.id) || ""),
+      monitor: String(focused && focused.monitor || ""),
+      time: new Date().toISOString()
+    }
+  }
+
   function runProviders(query) {
     providerPublishTimer.stop()
-    root.providerRows = ({})
+    root.providerRows = []
     if (root.opened) root.rebuildDisplay()
 
     if (!query || root.providerList.length === 0) {
@@ -1539,16 +1588,12 @@ Item {
 
     var command = [
       root.providerRunnerPath(),
-      "0.9",   // SIGTERM deadline
-      "0.2",   // SIGKILL grace
-      "8",     // rows per provider
-      "16384", // bytes per physical output line
-      query
+      query,
+      JSON.stringify(root.providerContext()),
+      JSON.stringify(root.configUnrestrictedProviders())
     ]
-    for (var i = 0; i < root.providerList.length; i++) {
-      command.push(root.providerList[i].name)
-      command.push(root.providerList[i].path)
-    }
+    for (var i = 0; i < root.providerList.length; i++)
+      command.push(root.providerList[i].manifestPath)
     root.queueProviderSearch(query, command)
   }
 
@@ -1573,48 +1618,42 @@ Item {
     providersProc.running = true
   }
 
+  function providerManifest(id) {
+    for (var i = 0; i < root.providerList.length; i++)
+      if (root.providerList[i].id === id) return root.providerList[i]
+    return null
+  }
+
   function acceptProviderLine(data) {
     if (providersProc.activeRun !== providersProc.latestRun
         || providersProc.activeSerial !== root.querySerial
         || providersProc.activeQuery !== root.currentQuery()) return
-    var line = String(data || "").replace(/\r$/, "")
-    if (!line) return
-    var parts = line.split("\t")
-    if (parts.length < 4) return
-    var name = parts[0]
-    var label = parts[1]
-    var detail = parts[2]
-    var action = parts[3]
-    var icon = parts.length > 4 ? parts[4] : ""
-    if (!name || !label || !action) return
-
-    var next = ({})
-    for (var key in root.providerRows)
-      next[key] = root.providerRows[key].slice()
-    var batch = next[name] || []
-    if (batch.length >= 8) return
-    batch.push({ label: label, detail: detail, action: action, icon: icon })
-    next[name] = batch
+    var wrapper
+    try { wrapper = JSON.parse(String(data || "")) } catch (_providerJsonError) { return }
+    var manifest = root.providerManifest(String(wrapper.providerId || ""))
+    if (!manifest) return
+    var checked = Provider.validateResult(manifest.id, wrapper.result)
+    if (!checked.ok) {
+      console.warn("omnibox: rejected provider result", manifest.id, checked.error)
+      return
+    }
+    if (root.providerRows.length >= 64) return
+    var next = root.providerRows.slice()
+    next.push(checked.value)
     root.providerRows = next
     providerPublishTimer.restart()
   }
 
   function providerRowList(query) {
     var rows = []
-    for (var i = 0; i < root.providerList.length; i++) {
-      var name = root.providerList[i].name
-      var batch = root.providerRows[name]
-      if (!batch) continue
-      for (var j = 0; j < batch.length; j++) {
-        var parsed = batch[j]
-        var detail = parsed.detail || name
-        var row = root.makeCandidate("providers", parsed.icon || "󰐢", "", parsed.label,
-          detail, "providerShell", parsed.action,
-          "prov:" + name + ":" + root.stableHash(parsed.label + "\u0000" + detail + "\u0000" + parsed.action))
-        var score = Fuzzy.score(query, parsed.label + " " + detail)
-        row.matchScore = score === null ? 100 + j : 50 + score + i * 0.001
-        rows.push(row)
-      }
+    for (var i = 0; i < root.providerRows.length; i++) {
+      var result = root.providerRows[i]
+      var score = Fuzzy.score(query, result.title + " " + result.subtitle)
+      if (score === null) continue
+      var candidate = root.makeCandidate("providers", result.icon || "󰐢", "",
+        result.title, result.subtitle, "providerV2", JSON.stringify(result), result.id)
+      candidate.matchScore = 50 + score + i * 0.001
+      rows.push(candidate)
     }
     return root.bestRows(rows, root.configMaxResults())
   }
@@ -1757,7 +1796,8 @@ Item {
         resultId: result.id,
         resultType: result.type,
         source: result.source,
-        sourceBadge: root.sourceLabels[result.source] || result.source,
+        sourceBadge: result.source === "providers" && result.value && result.value.providerId
+          ? String(result.value.providerId) : (root.sourceLabels[result.source] || result.source),
         icon: result.icon || "",
         iconFont: "",
         appIcon: result.appIcon || "",
@@ -1804,7 +1844,7 @@ Item {
     }
     root.querySerial += 1
     root.fileRows = []
-    root.providerRows = ({})
+    root.providerRows = []
     root.stopAsyncSearch()
     root.selectedIndex = 0
     root.cursorActive = true
@@ -1864,7 +1904,14 @@ Item {
       root.makeCandidate("system", "", "", "Shutdown", "", "shell", "omarchy-system-shutdown", "sys:shutdown"),
       root.makeCandidate("clipboard", "", "", "Clipboard", "", "clipboard", "0", "clip:smoke"),
       root.makeCandidate("ssh", "", "", "SSH host", "", "ssh", "example-host", "ssh:example-host"),
-      root.makeCandidate("providers", "", "", "Provider", "", "providerShell", "true", "prov:smoke")
+      root.makeCandidate("providers", "", "", "Provider", "", "providerV2", JSON.stringify({
+        id: "provider:smoke:row", type: "provider", source: "providers",
+        title: "Provider", subtitle: "", icon: "", appIcon: "",
+        value: { providerId: "smoke", data: null }, aliases: [],
+        actions: [{ id: "provider.run", title: "Run", executor: "argv",
+          argv: ["true"], lifecycle: "close", risk: "safe", confirm: false,
+          arguments: [] }]
+      }), "provider:smoke:row")
     ]
     var matrix = ({})
     for (var i = 0; i < candidates.length; i++) {
@@ -1991,6 +2038,56 @@ Item {
     })
   }
 
+  function providerStatus() {
+    var providers = []
+    for (var i = 0; i < root.providerList.length; i++)
+      providers.push({ id: root.providerList[i].id,
+        queryPolicy: root.providerList[i].queryPolicy,
+        triggers: root.providerList[i].triggers })
+    return JSON.stringify({ providers: providers, results: root.providerRows.length })
+  }
+
+  function providerRequestPreview(query) {
+    var requests = []
+    var context = root.providerContext()
+    for (var i = 0; i < root.providerList.length; i++) {
+      var manifest = root.providerList[i]
+      if (!Provider.triggerMatch(manifest, query)) continue
+      requests.push({
+        id: manifest.id,
+        body: Provider.queryBody(manifest, query),
+        context: Provider.filterContext(manifest, context)
+      })
+    }
+    return JSON.stringify(requests)
+  }
+
+  function providerResultCount() { return root.providerRows.length }
+
+  function providerResultIdAt(index) {
+    var value = Number(index)
+    return value >= 0 && value < root.providerRows.length ? root.providerRows[value].id : ""
+  }
+
+  function enterProviderConfirmationPreview() {
+    var checked = Provider.validateResult("test.destructive", {
+      protocol: 2,
+      id: "row",
+      type: "provider",
+      title: "Destructive provider action",
+      value: null,
+      actions: [{
+        id: "delete", title: "Delete", executor: "argv", argv: ["false"],
+        lifecycle: "terminal", risk: "destructive", confirm: true
+      }]
+    })
+    if (!checked.ok) return "Invalid"
+    root.resetInteraction()
+    root.activeResult = Actions.makeResult(checked.value).value
+    root.chooseAction(root.activeResult.actions[0])
+    return root.interactionMode
+  }
+
   function hintFor(index) {
     var model = root.interactionMode === "Search" ? displayModel : actionModel
     if (index < 0 || index >= model.count) return ""
@@ -2086,6 +2183,9 @@ Item {
       }
     } else if (root.interactionMode === "Confirm" && root.activeAction) {
       var confirmDetail = root.activeResult ? root.activeResult.title : ""
+      if (root.activeResult && root.activeResult.source === "providers"
+          && root.activeResult.value && root.activeResult.value.providerId)
+        confirmDetail += " · Provider " + root.activeResult.value.providerId
       if (root.pendingWorkflowPlan && root.pendingWorkflowPlan.steps)
         confirmDetail = root.pendingWorkflowPlan.steps.map(function(step) { return step.title }).join(" → ")
       root.appendInteractionRow({ id: "confirm:" + root.activeAction.id, confirm: true },
@@ -3130,28 +3230,39 @@ Item {
     property bool pending: false
     property string collected: ""
     stdout: SplitParser {
-      onRead: function(data) { scanProc.collected += data + "\n" }
+      onRead: function(data) {
+        scanProc.collected = Execution.boundedAppend(scanProc.collected, data + "\n", 262144)
+      }
     }
     onRunningChanged: if (!running) Qt.callLater(function() { root.startPendingProviderScan() })
     onExited: {
-      // User providers win over shipped ones with the same name, so the
-      // shipped set is loaded first and overwritten below.
-      var byName = ({})
-      var order = []
+      // Scanner emits shipped manifests first; a valid user manifest with the
+      // same provider id replaces it below.
+      var byId = ({})
       var lines = scanProc.collected.split("\n")
+      var allowlist = root.configUnrestrictedProviders()
       for (var i = 0; i < lines.length; i++) {
         var line = lines[i].trim()
         if (!line) continue
-        var tab = line.indexOf("\t")
-        if (tab <= 0) continue
-        var name = line.slice(0, tab)
-        var path = line.slice(tab + 1)
-        if (!byName[name]) order.push(name)
-        byName[name] = path
+        try {
+          var wrapper = JSON.parse(line)
+          var sourceDir = String(wrapper.sourceDir || "")
+          var manifestPath = String(wrapper.manifestPath || "")
+          if (!sourceDir || manifestPath.indexOf(sourceDir + "/") !== 0) continue
+          var checked = Provider.validateManifest(wrapper.manifest, sourceDir, allowlist)
+          if (!checked.ok) {
+            console.warn("omnibox: rejected provider manifest", checked.error)
+            continue
+          }
+          checked.value.manifestPath = manifestPath
+          byId[checked.value.id] = checked.value
+        } catch (_providerManifestError) { }
       }
+      var ids = []
+      for (var id in byId) ids.push(id)
+      ids.sort()
       var list = []
-      for (var j = 0; j < order.length; j++)
-        list.push({ name: order[j], path: byName[order[j]] })
+      for (var j = 0; j < ids.length; j++) list.push(byId[ids[j]])
       root.providerList = list
       if (root.opened && !root.projectScope) root.runProviders(root.currentQuery())
     }
@@ -3193,7 +3304,7 @@ Item {
       var query = root.currentQuery()
       if (!query || query.charAt(0) === ">") {
         root.fileRows = []
-        root.providerRows = ({})
+        root.providerRows = []
         return
       }
       root.runFileSearch(query)
