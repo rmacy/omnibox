@@ -159,6 +159,11 @@ The shipped `providers/packages` provider searches installed packages from a
 mode-`0600` cache. It refreshes that cache only when pacman’s local database
 changes, rather than running `pacman -Q` for every keystroke.
 
+## Product roadmap
+
+- [Omnibox 2.0 product requirements](docs/PRODUCT_REQUIREMENTS.md)
+- [Corresponding implementation TODO](docs/IMPLEMENTATION_TODO.md)
+
 ## Testing
 
 ```bash
