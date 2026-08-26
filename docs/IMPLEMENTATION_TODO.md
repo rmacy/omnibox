@@ -29,50 +29,50 @@ Omnibox 2.0 is complete only when all of the following are true:
 
 ### A0 — Baseline and contracts
 
-- [ ] **Record current behavioral fixtures for all ten result sources.** Add
+- [x] **Record current behavioral fixtures for all ten result sources.** Add
   fixtures or focused tests covering apps, windows, files, calculations, web,
   shell, system, clipboard, SSH, and providers; acceptance: each current primary
   activation can fail a test if lost during migration.
-- [ ] **Record a live keyboard baseline.** Exercise Escape, Up/Down,
+- [x] **Record a live keyboard baseline.** Exercise Escape, Up/Down,
   PageUp/PageDown, Enter, and file `Alt+Enter`; acceptance: observed behavior
   matches [`Omnibox.qml` lines 1549–1590](../Omnibox.qml#L1549-L1590) and the
   existing QML smoke remains green.
-- [ ] **Record ranking fixtures that expose fixed bucket behavior.** Include an
+- [x] **Record ranking fixtures that expose fixed bucket behavior.** Include an
   exact system/file/window match competing with a weak app match; acceptance:
   fixtures document current order from [`Omnibox.qml` lines 873–924](../Omnibox.qml#L873-L924)
   and will fail once global rank expectations are applied.
-- [ ] **Define `Result`, `Action`, typed argument, risk, and lifecycle schemas in
+- [x] **Define `Result`, `Action`, typed argument, risk, and lifecycle schemas in
   a pure ES5-compatible JS module.** Acceptance: schema validators reject
   missing stable IDs, empty action lists, invalid executor kinds, oversized argv,
   and contradictory `close`/`keepOpen` policies.
-- [ ] **Define stable built-in type and action IDs.** Acceptance: every current
+- [x] **Define stable built-in type and action IDs.** Acceptance: every current
   source has documented IDs and no ID contains raw clipboard content, raw query
   text, arbitrary command text, or a mutable positional index.
-- [ ] **Define mode-transition invariants.** Acceptance: a transition table
+- [x] **Define mode-transition invariants.** Acceptance: a transition table
   covers Search, Actions, Arguments, Confirm, Running, and Result, including
   Escape/back, cancellation, close, and stale async completion.
 
 ### A1 — Pure logic modules
 
-- [ ] **Extract query parsing into `js/Query.js`.** Acceptance: `>command`,
+- [x] **Extract query parsing into `js/Query.js`.** Acceptance: `>command`,
   forced calculation, normal search, aliases, and future typed intent tokens are
   parsed without QML object dependencies; existing behavior is unchanged.
-- [ ] **Implement a command/source registry in pure JS.** Acceptance: sources
+- [x] **Implement a command/source registry in pure JS.** Acceptance: sources
   register ID, label, match function, result normalizer, and availability;
   `rebuildDisplay()` no longer requires a hard-coded bucket object for each new
   source.
-- [ ] **Implement global score composition in `js/Ranking.js`.** Acceptance:
+- [x] **Implement global score composition in `js/Ranking.js`.** Acceptance:
   exact/prefix/fuzzy, intent, pin, frequency, recency, and source tie-breakers
   are individually unit tested and produce deterministic total ordering.
-- [ ] **Add score-explanation output for tests and local diagnostics.**
+- [x] **Add score-explanation output for tests and local diagnostics.**
   Acceptance: a result can report component scores without recording the query.
-- [ ] **Implement action validation and resolution in `js/Actions.js`.**
+- [x] **Implement action validation and resolution in `js/Actions.js`.**
   Acceptance: dynamic values resolve only to complete argv elements or typed
   built-ins; no resolver returns an interpolated shell fragment.
-- [ ] **Implement bounded navigation in `js/Flow.js`.** Acceptance: stack depth
+- [x] **Implement bounded navigation in `js/Flow.js`.** Acceptance: stack depth
   never exceeds four, Escape pops exactly one level, and returning restores a
   stable selection when present.
-- [ ] **Bring each new JS module above the repository’s 90% statements,
+- [x] **Bring each new JS module above the repository’s 90% statements,
   branches, functions, and lines thresholds.** Acceptance: `npm run coverage`
   enforces the threshold rather than excluding new modules.
 

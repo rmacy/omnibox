@@ -1,0 +1,12 @@
+{
+  "sourceOrder": ["calc", "apps", "windows", "files", "clipboard", "system", "web", "ssh", "run", "providers"],
+  "crossSourceScenario": {
+    "query": "reboot",
+    "currentBucketWinner": "app:reboot-tool",
+    "requiredGlobalWinner": "command:reboot",
+    "candidates": [
+      { "id": "app:reboot-tool", "source": "apps", "title": "Reboot Tool", "matchScore": 60 },
+      { "id": "command:reboot", "source": "system", "title": "Reboot", "matchScore": 1 }
+    ]
+  }
+}

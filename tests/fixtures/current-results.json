@@ -1,0 +1,112 @@
+[
+  {
+    "id": "calc:result",
+    "type": "calculation",
+    "source": "calc",
+    "title": "= 42",
+    "subtitle": "Copy result",
+    "value": { "text": "42" },
+    "actions": [
+      { "id": "calculation.copy", "title": "Copy result", "executor": "builtin", "builtin": "copyText", "lifecycle": "close", "risk": "safe" }
+    ]
+  },
+  {
+    "id": "app:com.mitchellh.ghostty",
+    "type": "app",
+    "source": "apps",
+    "title": "Ghostty",
+    "subtitle": "Terminal",
+    "value": { "appId": "com.mitchellh.ghostty" },
+    "actions": [
+      { "id": "app.open", "title": "Open", "executor": "builtin", "builtin": "appOpen", "lifecycle": "close", "risk": "safe" }
+    ]
+  },
+  {
+    "id": "window:0x1234",
+    "type": "window",
+    "source": "windows",
+    "title": "Terminal",
+    "subtitle": "com.mitchellh.ghostty · 1",
+    "value": { "address": "0x1234" },
+    "actions": [
+      { "id": "window.focus", "title": "Focus", "executor": "builtin", "builtin": "windowFocus", "lifecycle": "close", "risk": "safe" }
+    ]
+  },
+  {
+    "id": "file:/home/ryan/Documents/notes.txt",
+    "type": "file",
+    "source": "files",
+    "title": "notes.txt",
+    "subtitle": "~/Documents/notes.txt",
+    "value": { "path": "/home/ryan/Documents/notes.txt" },
+    "actions": [
+      { "id": "file.open", "title": "Open", "executor": "argv", "argv": ["xdg-open", "/home/ryan/Documents/notes.txt"], "lifecycle": "close", "risk": "safe" }
+    ]
+  },
+  {
+    "id": "clipboard:sample",
+    "type": "clipboard",
+    "source": "clipboard",
+    "title": "Copied text",
+    "subtitle": "Paste",
+    "value": { "historyIndex": 0 },
+    "actions": [
+      { "id": "clipboard.paste", "title": "Paste", "executor": "builtin", "builtin": "clipboardPaste", "lifecycle": "close", "risk": "safe" }
+    ]
+  },
+  {
+    "id": "command:lock",
+    "type": "command",
+    "source": "system",
+    "title": "Lock",
+    "subtitle": "Lock screen",
+    "value": { "commandId": "lock" },
+    "actions": [
+      { "id": "system.lock", "title": "Lock", "executor": "argv", "argv": ["omarchy", "system", "lock"], "lifecycle": "close", "risk": "safe" }
+    ]
+  },
+  {
+    "id": "web:duckduckgo",
+    "type": "web",
+    "source": "web",
+    "title": "Search DuckDuckGo",
+    "subtitle": "Web search",
+    "value": { "url": "https://duckduckgo.com/?q=omnibox" },
+    "actions": [
+      { "id": "web.open", "title": "Open", "executor": "argv", "argv": ["xdg-open", "https://duckduckgo.com/?q=omnibox"], "lifecycle": "close", "risk": "remote" }
+    ]
+  },
+  {
+    "id": "ssh:example-host",
+    "type": "ssh",
+    "source": "ssh",
+    "title": "SSH example-host",
+    "subtitle": "Open terminal session",
+    "value": { "host": "example-host" },
+    "actions": [
+      { "id": "ssh.connect", "title": "Connect", "executor": "argv", "argv": ["xdg-terminal-exec", "--", "ssh", "--", "example-host"], "lifecycle": "terminal", "risk": "remote" }
+    ]
+  },
+  {
+    "id": "shell:terminal",
+    "type": "shell",
+    "source": "run",
+    "title": "Run in terminal",
+    "subtitle": "Explicit expert mode",
+    "value": { "command": "uname -a" },
+    "actions": [
+      { "id": "shell.run-terminal", "title": "Run in terminal", "executor": "shell", "command": "uname -a", "trusted": true, "lifecycle": "terminal", "risk": "caution" }
+    ]
+  },
+  {
+    "id": "provider:packages:jq",
+    "type": "provider",
+    "source": "providers",
+    "title": "jq",
+    "subtitle": "Installed package",
+    "value": { "providerId": "packages" },
+    "actions": [
+      { "id": "provider.run", "title": "Run provider action", "executor": "shell", "command": "pacman -Qi -- jq", "trusted": true, "lifecycle": "terminal", "risk": "caution" }
+    ]
+  }
+]

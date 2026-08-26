@@ -1,0 +1,10 @@
+[
+  { "key": "Escape", "condition": "query-not-empty", "intent": "clear-query" },
+  { "key": "Escape", "condition": "query-empty", "intent": "close" },
+  { "key": "Down", "condition": "always", "intent": "select", "delta": 1 },
+  { "key": "Up", "condition": "always", "intent": "select", "delta": -1 },
+  { "key": "PageDown", "condition": "always", "intent": "select", "delta": 6 },
+  { "key": "PageUp", "condition": "always", "intent": "select", "delta": -6 },
+  { "key": "Enter", "condition": "always", "intent": "activate-primary" },
+  { "key": "Alt+Enter", "condition": "selected-file", "intent": "reveal-file" }
+]
