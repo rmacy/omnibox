@@ -82,7 +82,11 @@ while [[ ! -s $output ]]; do
   sleep .01
 done
 first_ns=$(date +%s%N)
-[[ -e $slow_started ]] || fail 'slow provider did not start concurrently'
+slow_deadline=$(( $(date +%s%N) + 300000000 ))
+while [[ ! -e $slow_started ]]; do
+  (( $(date +%s%N) < slow_deadline )) || fail 'slow provider did not start concurrently'
+  sleep .01
+done
 artifacts=("$runner_tmp"/run-providers.*/*)
 (( ${#artifacts[@]} >= 3 )) || fail 'secure temporary artifacts were not observable'
 for artifact in "${artifacts[@]}"; do
@@ -95,17 +99,23 @@ first_ms=$(( (first_ns - start_ns) / 1000000 ))
 total_ms=$(( (end_ns - start_ns) / 1000000 ))
 (( first_ms < 800 )) || fail 'fast publication exceeded bound'
 (( total_ms >= 250 && total_ms < 1500 )) || fail "timeout bound was wrong: ${total_ms}ms"
-[[ ! -e "$tmp/SHOULD_NOT_EXIST" ]]
-[[ $(wc -l <"$output") -eq 2 ]]
-jq -e -s 'length == 2 and all(.[]; .providerId == "test.fast")' "$output" >/dev/null
-jq -e -s --arg body "${query#fast }" 'all(.[]; .result.title == $body)' "$output" >/dev/null
-[[ $(<"$output") != *secret* ]]
-jq -e -s 'all(.[]; (.result.subtitle | fromjson) == {workspace:"3"})' "$output" >/dev/null
+[[ ! -e "$tmp/SHOULD_NOT_EXIST" ]] || fail 'literal query executed shell content'
+[[ $(wc -l <"$output") -eq 2 ]] || fail 'provider row cap was not enforced'
+jq -e -s 'length == 2 and all(.[]; .providerId == "test.fast")' "$output" >/dev/null \
+  || fail 'provider provenance wrapper was invalid'
+jq -e -s --arg body "${query#fast }" 'all(.[]; .result.title == $body)' "$output" >/dev/null \
+  || fail 'trigger-stripped query body was not literal'
+[[ $(<"$output") != *secret* ]] || fail 'unallowlisted context leaked'
+jq -e -s 'all(.[]; (.result.subtitle | fromjson) == {workspace:"3"})' "$output" >/dev/null \
+  || fail 'allowlisted context was wrong'
 
-[[ -z $("$runner" unrelated '{}' '[]' "$providers/fast.provider.json") ]]
-[[ -z $("$runner" anything '{}' '[]' "$providers/unrestricted.provider.json") ]]
+[[ -z $("$runner" unrelated '{}' '[]' "$providers/fast.provider.json") ]] \
+  || fail 'nonmatching triggered provider executed'
+[[ -z $("$runner" anything '{}' '[]' "$providers/unrestricted.provider.json") ]] \
+  || fail 'unallowlisted unrestricted provider executed'
 allowed=$("$runner" anything '{}' '["test.all"]' "$providers/unrestricted.provider.json")
-[[ $(jq -r '.providerId' <<<"$allowed") == test.all ]]
+[[ $(jq -r '.providerId' <<<"$allowed") == test.all ]] \
+  || fail 'explicit unrestricted provider did not execute'
 
 ln -s "$providers/fast.provider.json" "$providers/symlink.provider.json"
 [[ -z $("$runner" 'fast x' '{}' '[]' "$providers/symlink.provider.json") ]]
