@@ -284,7 +284,9 @@ function intentRows(query, context) {
     match = lower.match(/^(?:screenshot|capture)(?:\s+(smart|region|windows|fullscreen))?(?:\s+(edit|slurp|copy|save))?$/);
     if (match) {
         var useOmasnap = context && context.states && context.states.omasnap === "available";
-        var screenshotBase = useOmasnap ? ["omasnap"] : ["omarchy", "capture", "screenshot"];
+        var screenshotHelper = context ? String(context.screenshotHelper || "") : "";
+        var screenshotBase = screenshotHelper ? [screenshotHelper]
+            : (useOmasnap ? ["omasnap"] : ["omarchy", "capture", "screenshot"]);
         if (!match[1] && !match[2]) {
             var captureIntent = nativeIntent("native:capture:screenshot", "Take screenshot",
                 "Choose mode and destination · " + (useOmasnap ? "Omasnap" : "system capture"),
@@ -296,7 +298,7 @@ function intentRows(query, context) {
                   values: ["edit", "copy", "save"] }
             ];
             captureIntent.argumentOrder = ["mode", "destination"];
-            captureIntent.argumentValueMap = useOmasnap
+            captureIntent.argumentValueMap = (screenshotHelper || useOmasnap)
                 ? { destination: { edit: "", copy: "--copy", save: "--save" } }
                 : { destination: { edit: "slurp", copy: "copy", save: "save" } };
             rows.push(captureIntent);
@@ -304,7 +306,7 @@ function intentRows(query, context) {
             var mode = match[1] || "smart";
             var destination = match[2] || "edit";
             var screenshotArgv = screenshotBase.concat([mode]);
-            if (useOmasnap) {
+            if (screenshotHelper || useOmasnap) {
                 if (destination === "copy") screenshotArgv.push("--copy");
                 else if (destination === "save") screenshotArgv.push("--save");
             } else {

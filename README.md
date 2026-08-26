@@ -23,9 +23,9 @@ ranked results from ten sources as you type:
 | **Workflows** | Run validated registered-action workflows with typed project arguments, progress, cancellation, and stop-on-failure |
 | **Providers** | Manifest-gated trusted executables that stream typed protocol-2 NDJSON results and argv actions |
 
-Screenshot actions use `omasnap` when it is installed. Otherwise they fall back
-to Omarchy’s system capture command. Mode and edit/copy/save are selected inside
-the action flow.
+Screenshot actions check at execution time and use `omasnap` whenever it is
+available. Otherwise they invoke Omarchy’s system-default `omarchy screenshot`
+capture tool. Mode and edit/copy/save are selected inside the action flow.
 
 Every result has a primary action plus a discoverable action palette. Press
 **Tab** or **Ctrl+K** to act on a selected app, window, file, calculation, URL,

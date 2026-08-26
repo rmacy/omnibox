@@ -162,6 +162,16 @@ test('builds screenshot, toggle, audio, brightness, and text-size intents', () =
   })[0];
   assert.equal(omasnapPicker.argumentValueMap.destination.edit, '');
   assert.equal(omasnapPicker.argumentValueMap.destination.copy, '--copy');
+  const routed = Native.intentRows('screenshot region copy', {
+    screenshotHelper: '/plugin/bin/capture-screenshot',
+    states: { omasnap: 'unavailable' }
+  })[0];
+  assert.deepEqual(routed.argv, ['/plugin/bin/capture-screenshot', 'region', '--copy']);
+  const routedPicker = Native.intentRows('screenshot', {
+    screenshotHelper: '/plugin/bin/capture-screenshot'
+  })[0];
+  assert.deepEqual(routedPicker.argv, ['/plugin/bin/capture-screenshot']);
+  assert.equal(routedPicker.argumentValueMap.destination.save, '--save');
   assert.deepEqual(Native.intentRows('stay awake', { states: { idle: 'allowed' } })[0].argv,
     ['omarchy', 'toggle', 'idle', 'stay-awake']);
   assert.match(Native.intentRows('stay awake', { states: { idle: 'allowed' } })[0].subtitle, /allowed/);

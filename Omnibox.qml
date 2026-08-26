@@ -1510,6 +1510,7 @@ Item {
     var intents = Native.intentRows(query, {
       themes: root.nativeThemes,
       states: root.nativeStates,
+      screenshotHelper: root.pluginSourceDir() + "/bin/capture-screenshot",
       scoreFn: Fuzzy.score
     })
     for (var i = 0; i < intents.length; i++) {

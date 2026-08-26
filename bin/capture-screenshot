@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+mode=${1:-}
+output=${2:-}
+
+case "$mode" in
+smart | region | windows | fullscreen) ;;
+*)
+  printf 'capture-screenshot: invalid mode: %s\n' "$mode" >&2
+  exit 64
+  ;;
+esac
+
+case "$output" in
+"") ;;
+--copy | --save) ;;
+*)
+  printf 'capture-screenshot: invalid output: %s\n' "$output" >&2
+  exit 64
+  ;;
+esac
+
+if command -v omasnap >/dev/null 2>&1; then
+  argv=(omasnap "$mode")
+  [[ -n $output ]] && argv+=("$output")
+  exec "${argv[@]}"
+fi
+
+system_output=slurp
+[[ $output == --copy ]] && system_output=copy
+[[ $output == --save ]] && system_output=save
+exec omarchy capture screenshot "$mode" "$system_output"
