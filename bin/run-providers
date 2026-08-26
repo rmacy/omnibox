@@ -77,7 +77,8 @@ for manifest_path in "$@"; do
   filtered_context=$(jq -cn \
     --argjson context "$context_json" \
     --slurpfile manifest "$manifest_path" \
-    '$manifest[0].context // [] as $allowed | $context | with_entries(select(.key as $key | $allowed | index($key)))' \
+    '($manifest[0].context // []) as $allowed |
+      reduce $allowed[] as $key ({}; if ($context | has($key)) then .[$key] = $context[$key] else . end)' \
     2>/dev/null || printf '{}')
   timeout_ms=$(clamp "$(jq -r '.timeoutMs // 900' "$manifest_path")" 900 100 5000)
   kill_ms=$(clamp "$(jq -r '.killAfterMs // 200' "$manifest_path")" 200 50 1000)
