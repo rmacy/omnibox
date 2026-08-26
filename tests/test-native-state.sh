@@ -20,7 +20,9 @@ FAKE
 chmod +x "$tmp/omarchy"
 printf '#!/usr/bin/env bash\nexit 0\n' >"$tmp/omasnap"
 chmod +x "$tmp/omasnap"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$tmp/tmux"
+chmod +x "$tmp/tmux"
 
 actual=$(PATH="$tmp:$PATH" "$root/bin/native-state")
-expected=$'idle\tstay awake\nnightlight\ton (4200K)\nbluetooth\ton\nbar\tvisible\nomasnap\tavailable\nbrightness\t42%\ntext-size\tText size: 14px, GTK factor: 1.1 Terminal: 11pt'
+expected=$'idle\tstay awake\nnightlight\ton (4200K)\nbluetooth\ton\nbar\tvisible\nomasnap\tavailable\ntmux\tavailable\nbrightness\t42%\ntext-size\tText size: 14px, GTK factor: 1.1 Terminal: 11pt'
 [[ $actual == "$expected" ]]

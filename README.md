@@ -19,6 +19,8 @@ ranked results from ten sources as you type:
 | **Omarchy commands** | Search the live `omarchy commands --json` catalog and run policy-gated native actions |
 | **Clipboard** | Search your Omarchy clipboard history; Enter pastes into the focused window |
 | **SSH** | Hosts from `~/.ssh/config`; Enter opens an `ssh` session in your terminal |
+| **Projects** | Search opt-in Git repositories; resume, edit, open a terminal, scope file search, copy path, or open the remote |
+| **Workflows** | Run validated registered-action workflows with typed project arguments, progress, cancellation, and stop-on-failure |
 | **Providers** | Executable extensions that answer the query with TSV rows (see below) |
 
 Screenshot actions use `omasnap` when it is installed. Otherwise they fall back
@@ -158,7 +160,28 @@ Optional: `~/.config/omarchy/extensions/omnibox.jsonc` (hot-reloads):
   "fileRoots": ["~/Documents", "~/Downloads", "~/Desktop",
                 "~/Pictures", "~/Videos", "~/Music"],
   // Max rows per source.
-  "maxResults": 8
+  "maxResults": 8,
+  // Project discovery is opt-in and bounded.
+  "projects": {
+    "roots": ["~/Projects", "~/.config/omarchy/plugins"],
+    "maxDepth": 4,
+    "maxProjects": 200,
+    "openRemote": false
+  },
+  // Workflows reference registered actions; executable strings are rejected.
+  "workflows": [{
+    "id": "project.resume-configured",
+    "title": "Resume Project",
+    "aliases": ["resume project"],
+    "parameters": [
+      { "name": "project", "type": "project", "required": true }
+    ],
+    "steps": [
+      { "action": "project.open-or-focus-editor" },
+      { "action": "project.open-or-focus-terminal" }
+    ],
+    "stopOnFailure": true
+  }]
 }
 ```
 

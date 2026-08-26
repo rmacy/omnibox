@@ -14,6 +14,7 @@ import "js/Native.js" as Native
 import "js/Query.js" as Query
 import "js/Ranking.js" as Ranking
 import "js/Registry.js" as Registry
+import "js/Workflows.js" as Workflows
 
 // Omnibox — an Alfred-style universal launcher for the Omarchy shell.
 //
@@ -59,6 +60,17 @@ Item {
   property bool nativeCatalogLoaded: false
   property string nativeCatalogError: ""
   readonly property int maxNativeCatalogBytes: 1048576
+  property var projects: []
+  property var validatedWorkflows: []
+  property string projectsPath: Quickshell.env("HOME") + "/.local/state/omnibox/projects.json"
+  property string projectScope: ""
+  property string projectScopeTitle: ""
+  property string projectScanError: ""
+  property var workflowRuntime: null
+  property var workflowPlan: null
+  property var pendingWorkflowPlan: null
+  property string workflowRunToken: ""
+  property int workflowRunSerial: 0
 
   function resetInteraction() {
     var reset = Flow.reset({})
@@ -73,15 +85,23 @@ Item {
     root.actionSucceeded = true
     root.actionDetail = ""
     root.actionRunToken = ""
+    root.projectScope = ""
+    root.projectScopeTitle = ""
+    root.workflowRuntime = null
+    root.workflowPlan = null
+    root.pendingWorkflowPlan = null
+    root.workflowRunToken = ""
     root.searchSelectedIndex = 0
     actionModel.clear()
   }
 
   function interactionBreadcrumb() {
-    if (!root.flowState || !root.flowState.frames || root.flowState.frames.length <= 1) return ""
     var parts = []
-    for (var i = 1; i < root.flowState.frames.length; i++)
-      parts.push(String(root.flowState.frames[i].title || root.flowState.frames[i].mode || ""))
+    if (root.projectScope) parts.push(root.projectScopeTitle || "Project", "Files")
+    if (root.flowState && root.flowState.frames) {
+      for (var i = 1; i < root.flowState.frames.length; i++)
+        parts.push(String(root.flowState.frames[i].title || root.flowState.frames[i].mode || ""))
+    }
     return parts.join(" › ")
   }
 
@@ -137,6 +157,7 @@ Item {
   }
 
   function cancel() {
+    if (root.interactionMode === "Running") root.cancelRunningAction()
     root.opened = false
     var hadQuery = searchField.text.length > 0
     root.resetInteraction()
@@ -156,6 +177,8 @@ Item {
   //   engines   name -> search-url-with-%s (first key is the default)
   //   fileRoots directories fd searches (leading ~ expands)
   //   maxResults per-source row cap
+  //   projects   opt-in roots/depth/cap for project discovery
+  //   workflows  deterministic registered-action workflows
 
   property var config: ({})
   property string configError: ""
@@ -171,7 +194,9 @@ Item {
       "~/Documents", "~/Downloads", "~/Desktop",
       "~/Pictures", "~/Videos", "~/Music"
     ],
-    "maxResults": 8
+    "maxResults": 8,
+    "projects": { "roots": [], "maxDepth": 4, "maxProjects": 200 },
+    "workflows": []
   })
 
   function configEngines() {
@@ -191,6 +216,36 @@ Item {
     return (isFinite(n) && n > 0) ? Math.floor(n) : 8
   }
 
+  function configProjectRoots() {
+    var projects = root.config.projects
+    var roots = projects && projects.roots
+    if (!Array.isArray(roots)) return []
+    var resolved = []
+    var seen = ({})
+    for (var i = 0; i < roots.length && resolved.length < 16; i++) {
+      var path = root.homePath(String(roots[i] || "")).replace(/\/+$/, "")
+      if (path && path.charAt(0) === "/" && !seen[path]) {
+        seen[path] = true
+        resolved.push(path)
+      }
+    }
+    return resolved
+  }
+
+  function configProjectDepth() {
+    var value = Number(root.config.projects && root.config.projects.maxDepth)
+    return isFinite(value) ? Math.max(1, Math.min(8, Math.floor(value))) : 4
+  }
+
+  function configProjectLimit() {
+    var value = Number(root.config.projects && root.config.projects.maxProjects)
+    return isFinite(value) ? Math.max(1, Math.min(500, Math.floor(value))) : 200
+  }
+
+  function configWorkflows() {
+    return Array.isArray(root.config.workflows) ? root.config.workflows : []
+  }
+
   function applyConfig(value) {
     if (!value || typeof value !== "object" || Array.isArray(value))
       throw new Error("Config root must be an object")
@@ -200,6 +255,7 @@ Item {
     root.fileRows = []
     root.providerRows = ({})
     root.stopAsyncSearch()
+    root.configureProjects()
     if (!root.opened) return
     root.rebuildDisplay()
     var query = root.currentQuery()
@@ -231,6 +287,8 @@ Item {
     if (source === "system") return "sys:" + identity
     if (source === "ssh") return "ssh:" + identity
     if (source === "native") return "native:" + root.stableHash(identity)
+    if (source === "projects") return Workflows.projectId(identity)
+    if (source === "workflows") return "workflow:" + identity
     return ""
   }
 
@@ -248,6 +306,18 @@ Item {
     if (source === "system") {
       var systemId = id.indexOf("sys:") === 0 ? id.slice(4) : ""
       return root.systemSpec(systemId) ? systemId : ""
+    }
+    if (source === "projects") {
+      var projectValue = String(value || "")
+      try { projectValue = String(JSON.parse(projectValue).path || "") }
+      catch (_projectStoredError) { }
+      return Workflows.projectId(projectValue) === id ? projectValue : ""
+    }
+    if (source === "workflows") {
+      var workflowValue = String(value || "")
+      try { workflowValue = String(JSON.parse(workflowValue).id || "") }
+      catch (_workflowStoredError) { }
+      return Actions.stableId(workflowValue) && id === "workflow:" + workflowValue ? workflowValue : ""
     }
     if (source === "native") {
       var nativeValue = String(value || "")
@@ -290,7 +360,8 @@ Item {
         result: {
           id: canonicalKey,
           source: source,
-          type: source === "apps" ? "app" : (source === "files" ? "file" : (source === "ssh" ? "ssh" : "command")),
+          type: source === "apps" ? "app" : (source === "files" ? "file"
+            : (source === "ssh" ? "ssh" : (source === "projects" ? "project" : "command"))),
           icon: String(stored.icon || ""),
           appIcon: String(stored.appIcon || ""),
           title: String(stored.title || stored.label || identity),
@@ -327,6 +398,14 @@ Item {
 
   function fileSearchPath() {
     return root.pluginSourceDir() + "/bin/search-files"
+  }
+
+  function projectScannerPath() {
+    return root.pluginSourceDir() + "/bin/scan-projects"
+  }
+
+  function projectWriterPath() {
+    return root.pluginSourceDir() + "/bin/write-projects"
   }
 
   function saveUsage() {
@@ -376,6 +455,23 @@ Item {
       candidate = root.makeCandidate("system", spec.icon, "", spec.label, "",
         spec.builtin ? "systemBuiltin" : (spec.argv ? "systemArgv" : "shell"),
         spec.builtin || (spec.argv ? spec.argv.join("\u0000") : spec.action), canonicalKey)
+    } else if (source === "projects") {
+      var project = root.projectByIdentity(identity)
+      if (!project) return null
+      candidate = root.makeCandidate("projects", "󰉋", "", project.name,
+        root.shortPath(project.path) + (project.branch ? " · " + project.branch : ""),
+        "projectSpec", JSON.stringify(project), project.id)
+    } else if (source === "workflows") {
+      for (var workflowIndex = 0; workflowIndex < root.validatedWorkflows.length; workflowIndex++) {
+        if (root.validatedWorkflows[workflowIndex].id === identity) {
+          var workflow = root.validatedWorkflows[workflowIndex]
+          candidate = root.makeCandidate("workflows", "󰑮", "", workflow.title,
+            workflow.steps.length + " deterministic steps", "workflowSpec",
+            JSON.stringify(workflow), "workflow:" + workflow.id)
+          break
+        }
+      }
+      if (!candidate) return null
     } else if (source === "native") {
       candidate = root.nativeCandidateForRoute(identity)
       if (!candidate) return null
@@ -403,6 +499,97 @@ Item {
       return recency || (a.matchScore - b.matchScore)
     })
     return rows.slice(0, root.configMaxResults() + 1)
+  }
+
+
+  function sanitizeProjects(value) {
+    var source = value && value.version === 1 ? value.projects : value
+    if (!Array.isArray(source)) return []
+    var projects = []
+    var seen = ({})
+    for (var i = 0; i < source.length && projects.length < root.configProjectLimit(); i++) {
+      var input = source[i] || ({})
+      var safeRemote = input.remote ? Workflows.normalizeRemote(input.remote) : ""
+      var checked = Workflows.validateProject({
+        id: input.id || Workflows.projectId(String(input.path || "")),
+        name: input.name,
+        path: input.path,
+        marker: input.marker || ".git",
+        branch: input.branch,
+        remote: safeRemote,
+        refreshedAt: Number(input.refreshedAt) || 0
+      })
+      if (!checked.ok || seen[checked.value.id]) continue
+      seen[checked.value.id] = true
+      projects.push(checked.value)
+    }
+    projects.sort(function(a, b) {
+      var byName = a.name.localeCompare(b.name)
+      return byName || a.path.localeCompare(b.path)
+    })
+    return projects
+  }
+
+  function loadProjects(raw) {
+    try {
+      var parsed = JSON.parse(String(raw || "{}"))
+      var projects = root.sanitizeProjects(parsed)
+      if (projects.length > 0 || (parsed && parsed.version === 1)) root.projects = projects
+    } catch (error) {
+      root.projectScanError = "Invalid project cache: " + error
+    }
+  }
+
+  function saveProjects() {
+    projectWriterProc.payload = JSON.stringify({
+      version: 1, refreshedAt: Date.now(), projects: root.projects
+    })
+    if (projectWriterProc.running) {
+      projectWriterProc.pending = true
+      return
+    }
+    projectWriterProc.command = [root.projectWriterPath(), root.projectsPath]
+    projectWriterProc.running = true
+  }
+
+  function publishProjects(projects) {
+    root.projects = root.sanitizeProjects(projects)
+    root.projectScanError = ""
+    root.saveProjects()
+    if (root.opened && root.interactionMode === "Search") root.rebuildDisplay(true)
+  }
+
+  function runProjectScan() {
+    var roots = root.configProjectRoots()
+    if (roots.length === 0) {
+      root.projects = []
+      return
+    }
+    projectScanProc.latestRun += 1
+    projectScanProc.activeRun = projectScanProc.latestRun
+    projectScanProc.projects = []
+    projectScanProc.command = [root.projectScannerPath(),
+      String(root.configProjectDepth()), String(root.configProjectLimit())].concat(roots)
+    projectScanProc.running = true
+    projectScanTimeout.restart()
+  }
+
+  function startProjectWatcher(force) {
+    var roots = root.configProjectRoots()
+    if (force && projectWatchProc.running) projectWatchProc.running = false
+    if (roots.length === 0 || projectWatchProc.running) return
+    projectWatchProc.command = ["inotifywait", "-mq", "-r",
+      "-e", "create,delete,moved_to,moved_from",
+      "--format", "%e", "--"].concat(roots)
+    projectWatchProc.running = true
+  }
+
+  function configureProjects() {
+    var workflows = Workflows.validateConfig(root.configWorkflows())
+    if (workflows.ok) root.validatedWorkflows = workflows.value
+    else if (root.configWorkflows().length > 0) root.configError = workflows.error
+    root.startProjectWatcher(true)
+    root.runProjectScan()
   }
 
   // --------------------------------------------------------------- sources
@@ -527,6 +714,8 @@ Item {
     if (candidate.source === "run") return "shell"
     if (candidate.source === "system") return "command"
     if (candidate.source === "native") return "command"
+    if (candidate.source === "projects") return "project"
+    if (candidate.source === "workflows") return "command"
     if (candidate.source === "clipboard") return "clipboard"
     if (candidate.source === "ssh") return "ssh"
     return "provider"
@@ -649,6 +838,56 @@ Item {
         id: type === "web" ? "web.copy" : "calculation.copy",
         title: "Copy", executor: "builtin", builtin: "copyValue",
         lifecycle: "close", risk: "safe"
+      })
+    } else if (candidate.behavior === "projectSpec") {
+      var projectSpec
+      try { projectSpec = JSON.parse(payload) } catch (_projectSpecError) { return null }
+      var resumeRemote = !!(projectSpec.remote && root.config.projects
+        && root.config.projects.openRemote === true)
+      root.appendCheckedAction(actions, {
+        id: "project.resume", title: "Resume project", executor: "workflow",
+        workflowId: "project.resume", lifecycle: "keepOpen",
+        risk: resumeRemote ? "remote" : "safe", confirm: resumeRemote
+      })
+      root.appendCheckedAction(actions, {
+        id: "project.edit", title: "Open in editor", executor: "argv",
+        argv: ["omarchy", "launch", "editor", projectSpec.path],
+        lifecycle: "close", risk: "safe"
+      })
+      root.appendCheckedAction(actions, {
+        id: "project.terminal", title: "Open terminal", executor: "builtin",
+        builtin: "projectTerminal", lifecycle: "close", risk: "safe"
+      })
+      root.appendCheckedAction(actions, {
+        id: "project.search-files", title: "Search project files", executor: "builtin",
+        builtin: "projectSearch", lifecycle: "keepOpen", risk: "safe"
+      })
+      root.appendCheckedAction(actions, {
+        id: "project.copy-path", title: "Copy project path", executor: "builtin",
+        builtin: "projectCopyPath", lifecycle: "keepOpen", risk: "safe"
+      })
+      if (projectSpec.remote) {
+        root.appendCheckedAction(actions, {
+          id: "project.open-remote", title: "Open Git remote", executor: "argv",
+          argv: ["xdg-open", projectSpec.remote], lifecycle: "close", risk: "remote"
+        })
+      }
+    } else if (candidate.behavior === "workflowSpec") {
+      var workflowSpec
+      try { workflowSpec = JSON.parse(payload) } catch (_workflowSpecError) { return null }
+      var workflowHasRemote = false
+      for (var workflowStep = 0; workflowStep < workflowSpec.steps.length; workflowStep++)
+        if (workflowSpec.steps[workflowStep].action === "project.open-git-remote") workflowHasRemote = true
+      var projectValues = []
+      for (var projectIndex = 0; projectIndex < root.projects.length; projectIndex++)
+        projectValues.push(root.projects[projectIndex].path)
+      root.appendCheckedAction(actions, {
+        id: "workflow.run", title: "Run workflow", executor: "workflow",
+        workflowId: workflowSpec.id,
+        arguments: [{ id: "project", type: "project", title: "Project", required: true,
+          values: projectValues }],
+        lifecycle: "keepOpen", risk: workflowHasRemote ? "remote" : "safe",
+        confirm: workflowHasRemote
       })
     } else if (candidate.behavior === "nativeCatalogError") {
       allowLearning = false
@@ -908,7 +1147,7 @@ Item {
       return
     }
     var pattern = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-    var roots = root.configFileRoots()
+    var roots = root.projectScope ? [root.projectScope] : root.configFileRoots()
     var command = [root.fileSearchPath(), "8", "30", "1.2", "0.2", pattern]
     for (var i = 0; i < roots.length; i++) {
       var path = root.homePath(roots[i])
@@ -1175,6 +1414,73 @@ Item {
     nativeStateProc.running = true
   }
 
+
+  // -- projects and workflows -----------------------------------------------
+
+  function projectByIdentity(identity) {
+    var value = String(identity || "")
+    for (var i = 0; i < root.projects.length; i++)
+      if (root.projects[i].id === value || root.projects[i].path === value) return root.projects[i]
+    return null
+  }
+
+  function findProjectWindow(project, terminalOnly) {
+    var nameNeedle = String(project && project.name || "").toLowerCase()
+    var sessionNeedle = Workflows.sessionName(project).toLowerCase()
+    for (var i = 0; i < root.windows.length; i++) {
+      var win = root.windows[i]
+      var title = String(win.title || "").toLowerCase()
+      var klass = String(win.class || "").toLowerCase()
+      var terminal = /ghostty|foot|kitty|alacritty|terminal/.test(klass)
+      if (terminalOnly && !terminal) continue
+      if (!terminalOnly && terminal) continue
+      if ((nameNeedle && title.indexOf(nameNeedle) >= 0)
+          || (sessionNeedle && title.indexOf(sessionNeedle) >= 0)) return win
+    }
+    return null
+  }
+
+  function focusProjectWindow(project, terminalOnly) {
+    var win = root.findProjectWindow(project, terminalOnly)
+    var address = String(win && win.address || "")
+    if (!/^0x[0-9a-fA-F]+$/.test(address)) return false
+    Util.execArgv(["hyprctl", "dispatch",
+      'hl.dsp.focus({ window = "address:' + address + '" })'])
+    return true
+  }
+
+  function projectRows(query) {
+    var rows = []
+    for (var i = 0; i < root.projects.length; i++) {
+      var project = root.projects[i]
+      var haystack = [project.name, project.path, project.branch, project.remote].join(" ")
+      var score = Fuzzy.score(query, haystack)
+      if (score === null) continue
+      var detail = root.shortPath(project.path)
+      if (project.branch) detail += " · " + project.branch
+      var candidate = root.makeCandidate("projects", "󰉋", "", project.name, detail,
+        "projectSpec", JSON.stringify(project), project.id)
+      candidate.matchScore = score + 1
+      rows.push(candidate)
+    }
+    return root.bestRows(rows, root.configMaxResults())
+  }
+
+  function workflowRows(query) {
+    var rows = []
+    for (var i = 0; i < root.validatedWorkflows.length; i++) {
+      var workflow = root.validatedWorkflows[i]
+      var score = Fuzzy.score(query, workflow.title + " " + workflow.aliases.join(" "))
+      if (score === null) continue
+      var candidate = root.makeCandidate("workflows", "󰑮", "", workflow.title,
+        workflow.steps.length + " deterministic steps", "workflowSpec",
+        JSON.stringify(workflow), "workflow:" + workflow.id)
+      candidate.matchScore = score + 2
+      rows.push(candidate)
+    }
+    return root.bestRows(rows, root.configMaxResults())
+  }
+
   // -- external providers ---------------------------------------------------------
   //
   // Executables in the shipped/user provider directories receive the query
@@ -1321,7 +1627,7 @@ Item {
   readonly property var sourceLabels: ({
     calc: "Calculator", apps: "Apps", windows: "Windows", files: "Files",
     clipboard: "Clipboard", system: "System", web: "Web", ssh: "SSH",
-    run: "Shell", native: "Commands", providers: "Provider"
+    run: "Shell", native: "Commands", projects: "Projects", workflows: "Workflows", providers: "Provider"
   })
 
   function buildSourceRegistry() {
@@ -1345,7 +1651,13 @@ Item {
         collect: function(_parsed, context) { return root.sshRows(context.query) } },
       { id: "native", label: "Commands", order: 8,
         collect: function(_parsed, context) { return root.nativeRows(context.query) } },
-      { id: "providers", label: "Providers", order: 9,
+      { id: "projects", label: "Projects", order: 9,
+        available: function(_context) { return root.projects.length > 0 },
+        collect: function(_parsed, context) { return root.projectRows(context.query) } },
+      { id: "workflows", label: "Workflows", order: 10,
+        available: function(_context) { return root.validatedWorkflows.length > 0 },
+        collect: function(_parsed, context) { return root.workflowRows(context.query) } },
+      { id: "providers", label: "Providers", order: 11,
         collect: function(_parsed, context) { return root.providerRowList(context.query) } }
     ])
     root.sourceRegistry = built.ok ? built.value : null
@@ -1400,7 +1712,9 @@ Item {
     var parsed = Query.parse(query, root.learnedAliases())
     var rows = []
 
-    if (!query) {
+    if (root.projectScope) {
+      rows = query ? root.fileRowsFromBatch(query) : []
+    } else if (!query) {
       rows = root.favoriteRows()
       var seenEmpty = ({})
       for (var emptyIndex = 0; emptyIndex < rows.length; emptyIndex++) seenEmpty[rows[emptyIndex].id] = true
@@ -1533,6 +1847,12 @@ Item {
     return object ? String(object.id || "") : ""
   }
 
+  function detailAt(index) {
+    var model = root.interactionMode === "Search" ? displayModel : actionModel
+    var value = Number(index)
+    return value >= 0 && value < model.count ? String(model.get(value).detail || "") : ""
+  }
+
   function stageAActionMatrix() {
     var candidates = [
       root.makeCandidate("apps", "", "", "App", "", "app", "org.example.App", "app:org.example.App"),
@@ -1596,6 +1916,79 @@ Item {
     root.activeResult = result
     root.chooseAction(result.actions[0])
     return root.interactionMode
+  }
+
+  function projectStatus() {
+    return JSON.stringify({
+      count: root.projects.length,
+      workflows: root.validatedWorkflows.length,
+      error: root.projectScanError,
+      roots: root.configProjectRoots().length
+    })
+  }
+  function projectCount() { return root.projects.length }
+  function configuredWorkflowCount() { return root.validatedWorkflows.length }
+  function scopedFileResultCount() {
+    return root.projectScope ? root.fileRowsFromBatch(root.currentQuery()).length : 0
+  }
+
+  function enterProjectSearchByIdentity(identity) {
+    var project = root.projectByIdentity(String(identity || ""))
+    if (!project) return ""
+    root.enterProjectSearch(project)
+    return root.projectScope
+  }
+
+  function projectPreview(query) {
+    var candidates = root.projectRows(String(query || ""))
+    var preview = []
+    for (var i = 0; i < candidates.length; i++) {
+      var result = root.typedResultForCandidate(candidates[i])
+      if (!result) continue
+      var actions = []
+      for (var j = 0; j < result.actions.length; j++) actions.push(result.actions[j].id)
+      preview.push({ id: result.id, title: result.title, actions: actions })
+    }
+    return JSON.stringify(preview)
+  }
+
+  function workflowPreview(query) {
+    var candidates = root.workflowRows(String(query || ""))
+    var preview = []
+    for (var i = 0; i < candidates.length; i++) {
+      var result = root.typedResultForCandidate(candidates[i])
+      if (!result) continue
+      preview.push({ id: result.id, title: result.title,
+        action: result.actions.length > 0 ? result.actions[0].id : "",
+        projectValues: result.actions.length > 0 && result.actions[0].arguments.length > 0
+          ? result.actions[0].arguments[0].values.length : 0 })
+    }
+    return JSON.stringify(preview)
+  }
+
+  function enterWorkflowArgumentPreview(query) {
+    var candidates = root.workflowRows(String(query || ""))
+    if (candidates.length === 0) return "NoResult"
+    var result = root.typedResultForCandidate(candidates[0])
+    if (!result || result.actions.length === 0) return "NoAction"
+    root.resetInteraction()
+    root.activeResult = result
+    root.chooseAction(result.actions[0])
+    return root.interactionMode
+  }
+
+  function workflowPlanPreview(identity) {
+    var project = root.projectByIdentity(String(identity || ""))
+    if (!project) return JSON.stringify({ ok: false, error: "Project not found" })
+    var plan = Workflows.projectResume(project, { openRemote: false }, root.workflowCapabilities())
+    if (!plan.ok) return JSON.stringify({ ok: false, error: plan.error })
+    return JSON.stringify({
+      ok: true,
+      workflowId: plan.value.workflowId,
+      projectId: plan.value.project.id,
+      session: plan.value.steps.length > 1 ? plan.value.steps[1].session : "",
+      steps: plan.value.steps.map(function(step) { return step.id })
+    })
   }
 
   function hintFor(index) {
@@ -1670,9 +2063,20 @@ Item {
         if (field.values && field.values.length > 0) {
           for (var v = 0; v < field.values.length; v++) {
             var value = String(field.values[v])
-            if (filter && value.toLowerCase().indexOf(filter) < 0) continue
+            var valueLabel = value
+            var valueDetail = field.title
+            var valueIcon = "󰘧"
+            if (field.type === "project") {
+              var valueProject = root.projectByIdentity(value)
+              if (valueProject) {
+                valueLabel = valueProject.name
+                valueDetail = root.shortPath(valueProject.path)
+                valueIcon = "󰉋"
+              }
+            }
+            if (filter && (valueLabel + " " + valueDetail).toLowerCase().indexOf(filter) < 0) continue
             root.appendInteractionRow({ id: "argument:" + root.stableHash(value), value: value },
-              "󰘧", value, field.title, "Enter to select", field.type)
+              valueIcon, valueLabel, valueDetail, "Enter to select", field.type)
           }
         } else if (root.currentQuery()) {
           var typed = root.currentQuery()
@@ -1681,9 +2085,12 @@ Item {
         }
       }
     } else if (root.interactionMode === "Confirm" && root.activeAction) {
+      var confirmDetail = root.activeResult ? root.activeResult.title : ""
+      if (root.pendingWorkflowPlan && root.pendingWorkflowPlan.steps)
+        confirmDetail = root.pendingWorkflowPlan.steps.map(function(step) { return step.title }).join(" → ")
       root.appendInteractionRow({ id: "confirm:" + root.activeAction.id, confirm: true },
         "󰀦", "Confirm " + root.activeAction.title,
-        root.activeResult ? root.activeResult.title : "", "Enter confirms · Escape cancels", root.activeAction.risk)
+        confirmDetail, "Enter confirms · Escape cancels", root.activeAction.risk)
     } else if (root.interactionMode === "Running") {
       root.appendInteractionRow({ id: "running:" + root.actionRunToken },
         "󰑮", root.actionMessage || "Running", root.actionDetail, "Escape cancels", "running")
@@ -1734,6 +2141,10 @@ Item {
 
   function enterConfirm(action) {
     root.activeAction = action
+    if (action.executor === "workflow") {
+      var workflowPlan = root.planWorkflowAction(action)
+      root.pendingWorkflowPlan = workflowPlan.ok ? workflowPlan.value : null
+    }
     var pushed = Flow.push(root.flowState, "Confirm", action.title, { actionId: action.id })
     if (!root.applyFlowResult(pushed)) return
     root.selectedIndex = 0
@@ -1742,6 +2153,7 @@ Item {
   }
 
   function returnInteraction() {
+    if (root.interactionMode === "Confirm") root.pendingWorkflowPlan = null
     if (root.interactionMode === "Search") return false
     if (root.interactionMode === "Running") {
       root.cancelRunningAction()
@@ -1760,6 +2172,28 @@ Item {
       root.rebuildInteractionModel()
     }
     return true
+  }
+
+  function enterProjectSearch(project) {
+    var checked = Workflows.validateProject(project)
+    if (!checked.ok) return
+    root.resetInteraction()
+    root.projectScope = checked.value.path
+    root.projectScopeTitle = checked.value.name
+    root.selectedIndex = 0
+    root.fileRows = []
+    searchField.text = ""
+    root.rebuildDisplay(false)
+    Qt.callLater(function() { searchField.forceActiveFocus() })
+  }
+
+  function leaveProjectScope() {
+    root.projectScope = ""
+    root.projectScopeTitle = ""
+    root.fileRows = []
+    root.querySerial += 1
+    searchField.text = ""
+    root.rebuildDisplay(false)
   }
 
   function handleArgumentSelection(index) {
@@ -1785,6 +2219,15 @@ Item {
   function recordTypedUsage(result, action) {
     if (!result || !action || !root.learnableResultType(result.type)) return
     var persistedValue = result.value.payload
+    if (result.source === "projects") {
+      try { persistedValue = String(JSON.parse(String(persistedValue)).path || "") }
+      catch (_projectUsageError) { return }
+      if (root.usageKey("projects", persistedValue) !== result.id) return
+    } else if (result.source === "workflows") {
+      try { persistedValue = String(JSON.parse(String(persistedValue)).id || "") }
+      catch (_workflowUsageError) { return }
+      if (root.usageKey("workflows", persistedValue) !== result.id) return
+    }
     if (result.source === "native") {
       try {
         var nativeUsageSpec = JSON.parse(String(persistedValue))
@@ -1838,6 +2281,41 @@ Item {
   function executeBuiltin(action) {
     var result = root.activeResult
     var payload = result && result.value ? String(result.value.payload || "") : ""
+    if (action.builtin === "projectSearch"
+        || action.builtin === "projectCopyPath"
+        || action.builtin === "projectTerminal") {
+      var projectInput
+      try { projectInput = JSON.parse(payload) } catch (_projectActionError) {
+        root.showImmediateResult(false, "Invalid project metadata", "")
+        return
+      }
+      var checkedProject = Workflows.validateProject(projectInput)
+      if (!checkedProject.ok) {
+        root.showImmediateResult(false, "Invalid project metadata", checkedProject.error)
+        return
+      }
+      var actionProject = checkedProject.value
+      if (action.builtin === "projectSearch") {
+        root.enterProjectSearch(actionProject)
+        return
+      }
+      if (action.builtin === "projectCopyPath") {
+        Util.execArgv([root.omarchyPath + "/bin/omarchy-clipboard-paste-text",
+          "--copy-only", actionProject.path])
+        root.showImmediateResult(true, "Copied project path", actionProject.path)
+        return
+      }
+      root.cancel()
+      if (root.focusProjectWindow(actionProject, true)) return
+      var session = Workflows.sessionName(actionProject)
+      if (root.nativeStates.tmux === "available")
+        Util.execArgv(["xdg-terminal-exec", "--title=" + session, "--",
+          "tmux", "new-session", "-A", "-s", session, "-c", actionProject.path])
+      else
+        Util.execArgv(["xdg-terminal-exec", "--title=" + actionProject.name,
+          "--dir=" + actionProject.path])
+      return
+    }
     if (action.builtin === "reloadNativeCatalog") {
       root.loadNativeCatalog(true)
       root.showImmediateResult(true, "Reloading command catalog", root.nativeCatalogError)
@@ -2015,6 +2493,10 @@ Item {
       }
       return
     }
+    if (action.executor === "workflow") {
+      root.startWorkflowAction(action)
+      return
+    }
     if (action.executor === "shell" && action.trusted) {
       if (action.lifecycle === "keepOpen") root.startCapturedAction(["bash", "-lc", action.command], true)
       else {
@@ -2076,6 +2558,143 @@ Item {
   function activateAt(index) {
     root.activateIndex(Number(index), Qt.NoModifier)
     return root.interactionMode
+  }
+
+  function workflowById(id) {
+    for (var i = 0; i < root.validatedWorkflows.length; i++)
+      if (root.validatedWorkflows[i].id === id) return root.validatedWorkflows[i]
+    return null
+  }
+
+  function workflowCapabilities() {
+    return {
+      terminal: true,
+      tmux: root.nativeStates.tmux === "available",
+      browser: true
+    }
+  }
+
+  function workflowStatusText(runtime) {
+    if (!runtime || !runtime.statuses) return ""
+    var lines = []
+    for (var i = 0; i < runtime.statuses.length; i++) {
+      var status = runtime.statuses[i]
+      var title = runtime.plan.steps[i].title
+      lines.push((status.state === "success" ? "✓ "
+        : (status.state === "failure" ? "✕ "
+          : (status.state === "optional-failure" ? "⚠ " : "· "))) + title)
+    }
+    return lines.join("\n")
+  }
+
+  function planWorkflowAction(action) {
+    if (!action) return { ok: false, error: "Workflow action missing" }
+    if (action.workflowId === "project.resume") {
+      var projectInput
+      try { projectInput = JSON.parse(String(root.activeResult.value.payload || "")) }
+      catch (_resumeError) { return { ok: false, error: "Invalid project metadata" } }
+      return Workflows.projectResume(projectInput, {
+        openRemote: root.config.projects && root.config.projects.openRemote === true
+      }, root.workflowCapabilities())
+    }
+    var workflow = root.workflowById(action.workflowId)
+    var project = root.projectByIdentity(root.argumentValues.project)
+    if (!workflow || !project) return { ok: false, error: "Workflow inputs unavailable" }
+    return Workflows.buildPlan(workflow, { project: project.id },
+      root.projects, root.workflowCapabilities())
+  }
+
+  function startWorkflowAction(action) {
+    var planned = root.pendingWorkflowPlan
+      && root.pendingWorkflowPlan.workflowId === action.workflowId
+      ? { ok: true, value: root.pendingWorkflowPlan }
+      : root.planWorkflowAction(action)
+    root.pendingWorkflowPlan = null
+    if (!planned || !planned.ok) {
+      root.showImmediateResult(false, "Workflow plan rejected", planned && planned.error || "")
+      return
+    }
+    var started = Workflows.start(planned.value, root.actionRunToken)
+    if (!started.ok) {
+      root.showImmediateResult(false, "Workflow could not start", started.error)
+      return
+    }
+    root.workflowPlan = planned.value
+    root.workflowRuntime = started.value
+    root.workflowRunToken = root.actionRunToken
+    root.executeWorkflowStep()
+  }
+
+  function startWorkflowProcess(argv) {
+    workflowProc.latestRun += 1
+    workflowProc.activeRun = workflowProc.latestRun
+    workflowProc.activeToken = root.workflowRunToken
+    workflowProc.stdoutText = ""
+    workflowProc.stderrText = ""
+    workflowProc.command = argv
+    workflowProc.running = true
+    workflowTimeout.restart()
+  }
+
+  function executeWorkflowStep() {
+    if (!root.workflowRuntime || root.workflowRuntime.done) return
+    var current = Workflows.current(root.workflowRuntime)
+    if (!current.ok || !current.value) {
+      root.showImmediateResult(false, "Workflow state invalid", current.error || "")
+      return
+    }
+    var step = current.value
+    var index = root.workflowRuntime.index
+    root.actionMessage = root.workflowPlan.title + " · " + (index + 1) + "/" + root.workflowPlan.steps.length
+    root.actionDetail = root.workflowStatusText(root.workflowRuntime)
+    root.rebuildInteractionModel()
+
+    if (step.executor === "builtin" && step.builtin === "projectEditor") {
+      if (root.focusProjectWindow(step.project, false)) {
+        root.advanceWorkflow(true, "Focused existing editor")
+        return
+      }
+      Util.execArgv(["omarchy", "launch", "editor", step.project.path])
+      root.advanceWorkflow(true, "Launched editor")
+      return
+    }
+    if (step.executor === "builtin" && step.builtin === "projectTerminal") {
+      if (root.focusProjectWindow(step.project, true)) {
+        root.advanceWorkflow(true, "Focused existing terminal")
+        return
+      }
+      if (step.tmux) {
+        Util.execArgv(["xdg-terminal-exec", "--title=" + step.session, "--",
+          "tmux", "new-session", "-A", "-s", step.session, "-c", step.project.path])
+      } else {
+        Util.execArgv(["xdg-terminal-exec", "--title=" + step.project.name,
+          "--dir=" + step.project.path])
+      }
+      root.advanceWorkflow(true, "Launched terminal")
+      return
+    }
+    if (step.executor === "argv") {
+      root.startWorkflowProcess(step.argv)
+      return
+    }
+    root.advanceWorkflow(false, "Unsupported workflow step")
+  }
+
+  function advanceWorkflow(ok, detail) {
+    if (!root.workflowRuntime) return
+    var advanced = ok
+      ? Workflows.succeedStep(root.workflowRuntime, root.workflowRunToken, detail)
+      : Workflows.failStep(root.workflowRuntime, root.workflowRunToken, detail)
+    if (!advanced.ok) return
+    root.workflowRuntime = advanced.value
+    if (root.workflowRuntime.done) {
+      var success = !root.workflowRuntime.failed && !root.workflowRuntime.canceled
+      root.showImmediateResult(success,
+        root.workflowPlan.title + (success ? " complete" : " failed"),
+        root.workflowStatusText(root.workflowRuntime))
+      return
+    }
+    Qt.callLater(function() { root.executeWorkflowStep() })
   }
 
   function formatCapturedDetail(ok, stdoutText, stderrText, exitCode) {
@@ -2141,12 +2760,19 @@ Item {
     actionTimeoutTimer.stop()
     actionProc.latestRun += 1
     if (actionProc.running) actionProc.running = false
+    workflowTimeout.stop()
+    workflowProc.latestRun += 1
+    if (workflowProc.running) workflowProc.running = false
+    if (root.workflowRuntime) {
+      var workflowCanceled = Workflows.cancel(root.workflowRuntime, root.workflowRunToken)
+      if (workflowCanceled.ok) root.workflowRuntime = workflowCanceled.value
+    }
     var canceled = Flow.cancel(root.flowState, root.actionRunToken)
     if (canceled.ok) root.flowState = canceled.value
     root.interactionMode = "Result"
     root.actionMessage = "Canceled"
     root.actionSucceeded = false
-    root.actionDetail = ""
+    root.actionDetail = root.workflowRuntime ? root.workflowStatusText(root.workflowRuntime) : ""
     root.rebuildInteractionModel()
   }
 
@@ -2198,6 +2824,138 @@ Item {
         ok, actionProc.stdoutText, actionProc.stderrText, exitCode)
       root.showImmediateResult(ok, ok ? root.activeAction.title + " complete" : root.activeAction.title + " failed", detail)
     }
+  }
+
+  Process {
+    id: workflowProc
+    property int latestRun: 0
+    property int activeRun: 0
+    property string activeToken: ""
+    property string stdoutText: ""
+    property string stderrText: ""
+    stdout: SplitParser {
+      onRead: function(data) {
+        workflowProc.stdoutText = Execution.boundedAppend(
+          workflowProc.stdoutText, data + "\n", root.maxActionOutputBytes)
+      }
+    }
+    stderr: SplitParser {
+      onRead: function(data) {
+        workflowProc.stderrText = Execution.boundedAppend(
+          workflowProc.stderrText, data + "\n", root.maxActionOutputBytes)
+      }
+    }
+    onExited: function(exitCode, exitStatus) {
+      workflowTimeout.stop()
+      if (workflowProc.activeRun !== workflowProc.latestRun
+          || workflowProc.activeToken !== root.workflowRunToken
+          || !root.workflowRuntime) return
+      var ok = exitCode === 0 && exitStatus === 0
+      root.advanceWorkflow(ok, ok ? workflowProc.stdoutText.trim()
+        : (workflowProc.stderrText.trim() || "Exit " + exitCode))
+    }
+  }
+
+  Timer {
+    id: workflowTimeout
+    interval: 15000
+    repeat: false
+    onTriggered: {
+      workflowProc.latestRun += 1
+      if (workflowProc.running) workflowProc.running = false
+      root.advanceWorkflow(false, "Step exceeded 15 seconds")
+    }
+  }
+
+
+  FileView {
+    id: projectCacheView
+    path: root.projectsPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.loadProjects(text())
+    onFileChanged: reload()
+  }
+
+  Process {
+    id: projectScanProc
+    property int latestRun: 0
+    property int activeRun: 0
+    property var projects: []
+    stdout: SplitParser {
+      onRead: function(data) {
+        if (projectScanProc.activeRun !== projectScanProc.latestRun
+            || projectScanProc.projects.length >= root.configProjectLimit()) return
+        try {
+          var input = JSON.parse(String(data || ""))
+          input.id = Workflows.projectId(String(input.path || ""))
+          var checked = Workflows.validateProject(input)
+          if (checked.ok) {
+            var next = projectScanProc.projects.slice()
+            next.push(checked.value)
+            projectScanProc.projects = next
+          }
+        } catch (_projectLineError) { }
+      }
+    }
+    onExited: function(exitCode, exitStatus) {
+      projectScanTimeout.stop()
+      if (projectScanProc.activeRun !== projectScanProc.latestRun) return
+      if (exitCode !== 0 || exitStatus !== 0) {
+        root.projectScanError = "Project scan exited " + exitCode
+        return
+      }
+      root.publishProjects(projectScanProc.projects)
+    }
+  }
+
+  Timer {
+    id: projectScanTimeout
+    interval: 4000
+    repeat: false
+    onTriggered: {
+      projectScanProc.latestRun += 1
+      if (projectScanProc.running) projectScanProc.running = false
+      root.projectScanError = "Project scan exceeded 4 seconds"
+    }
+  }
+
+  Process {
+    id: projectWriterProc
+    property string payload: ""
+    property bool pending: false
+    stdinEnabled: true
+    onStarted: write(payload + "\n")
+    onExited: function(exitCode, exitStatus) {
+      if (exitCode !== 0 || exitStatus !== 0)
+        console.warn("omnibox: project cache write failed:", exitCode, exitStatus)
+      if (projectWriterProc.pending) {
+        projectWriterProc.pending = false
+        Qt.callLater(function() { root.saveProjects() })
+      }
+    }
+  }
+
+  Process {
+    id: projectWatchProc
+    stdout: SplitParser { onRead: function(_data) { projectRefreshTimer.restart() } }
+    onRunningChanged: {
+      if (!running && root.configProjectRoots().length > 0) projectWatchRestartTimer.restart()
+    }
+  }
+
+  Timer {
+    id: projectRefreshTimer
+    interval: 250
+    repeat: false
+    onTriggered: root.runProjectScan()
+  }
+
+  Timer {
+    id: projectWatchRestartTimer
+    interval: 1000
+    repeat: false
+    onTriggered: root.startProjectWatcher(false)
   }
 
   Process {
@@ -2395,7 +3153,7 @@ Item {
       for (var j = 0; j < order.length; j++)
         list.push({ name: order[j], path: byName[order[j]] })
       root.providerList = list
-      if (root.opened) root.runProviders(root.currentQuery())
+      if (root.opened && !root.projectScope) root.runProviders(root.currentQuery())
     }
   }
 
@@ -2439,7 +3197,7 @@ Item {
         return
       }
       root.runFileSearch(query)
-      root.runProviders(query)
+      if (!root.projectScope) root.runProviders(query)
     }
   }
 
@@ -2597,6 +3355,7 @@ Item {
 
   Component.onCompleted: {
     root.buildSourceRegistry()
+    root.configureProjects()
     root.loadNativeCatalog(false)
     root.loadNativeThemes(false)
     root.refreshNativeState()
@@ -2768,6 +3527,7 @@ Item {
               if (event.key === Qt.Key_Escape) {
                 if (root.interactionMode !== "Search") root.returnInteraction()
                 else if (searchField.text) searchField.text = ""
+                else if (root.projectScope) root.leaveProjectScope()
                 else root.cancel()
                 event.accepted = true
               } else if (event.key === Qt.Key_Tab && shift) {

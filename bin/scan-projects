@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  printf 'usage: %s <max-depth:1-8> <max-projects:1-500> <absolute-root...>\n' "${0##*/}" >&2
+  exit 2
+}
+
+(( $# >= 3 )) || usage
+depth=$1
+limit=$2
+shift 2
+[[ $depth =~ ^[1-8]$ ]] || usage
+[[ $limit =~ ^[1-9][0-9]*$ ]] && (( limit <= 500 )) || usage
+command -v fd >/dev/null 2>&1 || exit 0
+command -v git >/dev/null 2>&1 || exit 0
+command -v jq >/dev/null 2>&1 || exit 0
+
+umask 077
+tmp=$(mktemp "${TMPDIR:-/tmp}/omnibox-projects.XXXXXXXX")
+trap 'rm -f -- "$tmp"' EXIT HUP INT TERM
+
+for root in "$@"; do
+  [[ $root == /* && -d $root ]] || continue
+  root=$(realpath -e -- "$root" 2>/dev/null || true)
+  [[ -n $root ]] || continue
+  while IFS= read -r -d '' marker; do
+    marker=${marker%/}
+    project=${marker%/.git}
+    project=$(realpath -e -- "$project" 2>/dev/null || true)
+    [[ -n $project && $project == /* && $project != *$'\n'* && $project != *$'\t'* ]] || continue
+    printf '%s\n' "$project" >>"$tmp"
+  done < <(fd --hidden --no-ignore --max-depth "$((depth + 1))" --type d --type f --print0 '^\.git$' "$root" 2>/dev/null || true)
+done
+
+mapfile -t projects < <(LC_ALL=C sort -u -- "$tmp")
+count=0
+refreshed_at=$(($(date +%s) * 1000))
+for project in "${projects[@]}"; do
+  (( count < limit )) || break
+  name=${project##*/}
+  branch=$(git -C "$project" symbolic-ref --quiet --short HEAD 2>/dev/null \
+    || git -C "$project" rev-parse --short HEAD 2>/dev/null || true)
+  remote=$(git -C "$project" config --get remote.origin.url 2>/dev/null || true)
+  jq -cn --arg path "$project" --arg name "$name" --arg branch "$branch" --arg remote "$remote" \
+    --argjson refreshedAt "$refreshed_at" \
+    '{path:$path,name:$name,marker:".git",branch:$branch,remote:$remote,refreshedAt:$refreshedAt}'
+  count=$((count + 1))
+done

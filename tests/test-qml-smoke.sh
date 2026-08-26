@@ -52,6 +52,38 @@ omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
 [[ $(omarchy-shell shell call bitr0t.omnibox enterNativeArgumentPreview 'Set the default audio output and move active streams') == Arguments ]]
 omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
 
+if (( $(omarchy-shell shell call bitr0t.omnibox projectCount '') > 0 )); then
+  project_preview=$(omarchy-shell shell call bitr0t.omnibox projectPreview omnibox)
+  [[ $project_preview == *'bitr0t.omnibox'* ]]
+  [[ $project_preview == *'project.resume'* ]]
+  project_path="$HOME/.config/omarchy/plugins/bitr0t.omnibox"
+  plan_a=$(omarchy-shell shell call bitr0t.omnibox workflowPlanPreview "$project_path")
+  plan_b=$(omarchy-shell shell call bitr0t.omnibox workflowPlanPreview "$project_path")
+  plan_c=$(omarchy-shell shell call bitr0t.omnibox workflowPlanPreview "$project_path")
+  [[ $plan_a == "$plan_b" && $plan_b == "$plan_c" ]]
+  [[ $plan_a == *'project.open-or-focus-editor'* ]]
+  [[ $(omarchy-shell shell call bitr0t.omnibox enterProjectSearchByIdentity "$project_path") == "$project_path" ]]
+  omarchy-shell shell call bitr0t.omnibox setInteractionQuery README >/dev/null
+  sleep 1
+  (( $(omarchy-shell shell call bitr0t.omnibox scopedFileResultCount '') > 0 ))
+  omarchy-shell shell call bitr0t.omnibox leaveProjectScope '' >/dev/null
+fi
+
+if (( $(omarchy-shell shell call bitr0t.omnibox configuredWorkflowCount '') > 0 )); then
+  workflow_preview=$(omarchy-shell shell call bitr0t.omnibox workflowPreview 'Resume Project')
+  [[ $workflow_preview == *'workflow.run'* ]]
+  [[ $workflow_preview != *'"projectValues":0'* ]]
+  [[ $(omarchy-shell shell call bitr0t.omnibox enterWorkflowArgumentPreview 'Resume Project') == Arguments ]]
+  [[ $(omarchy-shell shell call bitr0t.omnibox objectIdAt 0) == argument:* ]]
+  omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+  [[ $(omarchy-shell shell call bitr0t.omnibox enterWorkflowArgumentPreview 'Resume Project with Git Remote') == Arguments ]]
+  omarchy-shell shell call bitr0t.omnibox activateAt 0 >/dev/null
+  [[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Confirm ]]
+  [[ $(omarchy-shell shell call bitr0t.omnibox detailAt 0) == *'Open or focus editor'* ]]
+  omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+  omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+fi
+
 omarchy-shell shell summon bitr0t.omnibox '{"query":"show reminders"}' >/dev/null
 [[ $(omarchy-shell shell call bitr0t.omnibox objectIdAt 0) == native:* ]]
 omarchy-shell shell call bitr0t.omnibox activateAt 0 >/dev/null

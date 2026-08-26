@@ -271,69 +271,69 @@ Omnibox 2.0 is complete only when all of the following are true:
 
 ### C0 — Project discovery
 
-- [ ] **Extend JSONC configuration with validated project roots and maximum
+- [x] **Extend JSONC configuration with validated project roots and maximum
   depth.** Acceptance: roots hot-reload, `~` expands safely, nonexistent roots
   are ignored, and `$HOME` is not crawled by default.
-- [ ] **Implement a bounded project scanner helper.** Acceptance: it receives
+- [x] **Implement a bounded project scanner helper.** Acceptance: it receives
   roots/depth as argv, discovers `.git` projects without following unsafe loops,
   bounds rows/runtime/output, and never runs on the UI thread.
-- [ ] **Cache only stable project metadata atomically at mode `0600`.**
+- [x] **Cache only stable project metadata atomically at mode `0600`.**
   Acceptance: cache contains path, display name, marker, optional branch, and
   refresh timestamp—no file contents or Git credentials/remotes with secrets.
-- [ ] **Refresh project data through explicit refresh and bounded filesystem
+- [x] **Refresh project data through explicit refresh and bounded filesystem
   observation.** Acceptance: created/moved/deleted projects appear without a
   shell restart and scans coalesce during bursts.
-- [ ] **Add project ranking and availability tests.** Acceptance: explicit alias,
+- [x] **Add project ranking and availability tests.** Acceptance: explicit alias,
   exact name, path component, pin, frequency, and recency order deterministically.
 
 ### C1 — Project actions
 
-- [ ] **Implement Open in editor with the real `omarchy launch editor <path>`
+- [x] **Implement Open in editor with the real `omarchy launch editor <path>`
   seam.** Acceptance: paths with spaces and leading dashes remain argv literals.
-- [ ] **Implement Open terminal here after verifying the active terminal’s
+- [x] **Implement Open terminal here after verifying the active terminal’s
   supported working-directory contract.** Acceptance: no `bash -lc 'cd ...'`
   string is built from the path.
-- [ ] **Implement file search scoped to the selected project.** Acceptance:
+- [x] **Implement file search scoped to the selected project.** Acceptance:
   selecting a project enters a breadcrumb-scoped search and reuses bounded
   latest-request-wins file search.
-- [ ] **Implement Git remote browsing only for recognized HTTPS/SSH remotes.**
+- [x] **Implement Git remote browsing only for recognized HTTPS/SSH remotes.**
   Acceptance: credentials/userinfo are rejected or redacted and the resolved URL
   is shown before opening.
-- [ ] **Implement optional tmux attach/create after capability detection.**
+- [x] **Implement optional tmux attach/create after capability detection.**
   Acceptance: a stable session name is derived deterministically and repeated
   activation attaches rather than duplicates.
-- [ ] **Implement Project Resume as idempotent focus-before-launch steps.**
+- [x] **Implement Project Resume as idempotent focus-before-launch steps.**
   Acceptance: repeated execution does not duplicate identified editor windows
   or tmux sessions; optional missing steps do not fail required steps.
 
 ### C2 — Workflow engine
 
-- [ ] **Add a validated `workflows` JSONC schema.** Acceptance: stable IDs,
+- [x] **Add a validated `workflows` JSONC schema.** Acceptance: stable IDs,
   aliases, typed parameters, registered action references, optional steps,
   stop-on-failure, and risk are accepted; arbitrary executable strings are not.
-- [ ] **Resolve workflow arguments through typed pickers.** Acceptance: file,
+- [x] **Resolve workflow arguments through typed pickers.** Acceptance: file,
   project, theme, device, workspace, monitor, enum, integer, and bounded string
   arguments have specific validation.
-- [ ] **Render a concrete workflow plan.** Acceptance: step order, targets,
+- [x] **Render a concrete workflow plan.** Acceptance: step order, targets,
   optional steps, remote/destructive markers, and redacted values are visible.
-- [ ] **Execute one step at a time.** Acceptance: next step starts only after the
+- [x] **Execute one step at a time.** Acceptance: next step starts only after the
   current required step succeeds; no silent retry or parallel side effects.
-- [ ] **Implement cancellation and stale completion protection.** Acceptance:
+- [x] **Implement cancellation and stale completion protection.** Acceptance:
   cancel stops the active process, prevents future steps, and late output cannot
   change a new flow.
-- [ ] **Stop on the first required failure and show partial progress.**
+- [x] **Stop on the first required failure and show partial progress.**
   Acceptance: completed/pending/failed steps are visible and the UI makes no
   rollback claim.
-- [ ] **Learn only workflow IDs.** Acceptance: usage and metrics contain no
+- [x] **Learn only workflow IDs.** Acceptance: usage and metrics contain no
   parameter values, plans, paths beyond approved stable project identity, or
   stdout/stderr.
-- [ ] **Add adversarial workflow tests.** Acceptance: cycles, excessive depth,
+- [x] **Add adversarial workflow tests.** Acceptance: cycles, excessive depth,
   unknown actions, oversized args, injection strings, cancellation races, and
   partial failure are rejected or handled deterministically.
 
 ### Stage C gate
 
-- [ ] **Pass the Projects and Workflows gate.** Observable result: an opt-in
+- [x] **Pass the Projects and Workflows gate.** Observable result: an opt-in
   project can be found, acted on, and resumed; Project Resume replaces at least
   four documented manual steps; three repeated runs create no duplicate
   identified windows/sessions; workflow plan/failure/cancel behavior is visible.

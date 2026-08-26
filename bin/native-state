@@ -35,6 +35,13 @@ else
   printf 'omasnap\tunavailable\n'
 fi
 
+tmux_command=${OMNIBOX_TMUX_COMMAND:-tmux}
+if command -v "$tmux_command" >/dev/null 2>&1; then
+  printf 'tmux\tavailable\n'
+else
+  printf 'tmux\tunavailable\n'
+fi
+
 brightness=$(omarchy brightness display --no-osd 2>/dev/null | clean || true)
 [[ -n $brightness ]] && printf 'brightness\t%s\n' "$brightness"
 
