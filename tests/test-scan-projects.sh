@@ -10,6 +10,8 @@ mkdir -p "$projects/nested" "$projects/literal;\$(touch SHOULD_NOT_EXIST)"
 make_repo() {
   local path=$1
   git init -q "$path"
+  git -C "$path" config user.name "Ryan Macy"
+  git -C "$path" config user.email "ryan@macy.dev"
   printf 'test\n' >"$path/file.txt"
   git -C "$path" add file.txt
   git -C "$path" commit -qm init
