@@ -20,11 +20,19 @@ ranked results from ten sources as you type:
 | **SSH** | Hosts from `~/.ssh/config`; Enter opens an `ssh` session in your terminal |
 | **Providers** | Executable extensions that answer the query with TSV rows (see below) |
 
-Omnibox also **learns stable targets**: frequently used apps, files, system
-actions, and SSH hosts float to the top. Shell commands, provider actions,
-clipboard entries, calculations, and web queries are never persisted. Usage
-state is stored atomically with mode `0600`. Open the box with an empty query
-to see your favorites.
+Every result has a primary action plus a discoverable action palette. Press
+**Tab** or **Ctrl+K** to act on a selected app, window, file, calculation, URL,
+clipboard entry, system command, or SSH host without rebuilding context in
+another app. Breadcrumbs preserve the selected object while arguments and
+confirmations are collected.
+
+Omnibox also **learns stable targets and actions**: frequently and recently
+used apps, files, system actions, and SSH hosts float to the top. Safe targets
+can be pinned, aliased, forgotten, inspected, or reset from the action palette.
+Shell commands, provider actions, clipboard entries, calculations, and web
+queries are never persisted. Versioned usage state is stored atomically with
+mode `0600`. Open the box with an empty query to see pinned and recent targets
+followed by deterministic system suggestions.
 
 The stock Omarchy menu is untouched — every `omarchy menu toggle <route>`
 (system, capture, theme, setup, …) keeps working, and Omnibox links into it.
@@ -91,9 +99,11 @@ rm -rf ~/.local/state/omnibox
 |---|---|
 | Type | Query all sources |
 | ↑ / ↓, PgUp / PgDn | Move selection |
-| Enter | Activate selected row |
+| Enter | Run the primary action or select the current action/argument |
+| Tab, Ctrl+K | Open the selected result’s action palette |
+| Shift+Tab | Return one action/argument level |
 | Alt+Enter | On file rows: open the containing folder |
-| Escape | Clear query, then close |
+| Escape | Return one level; in search, clear query then close |
 
 ## Prefixes
 

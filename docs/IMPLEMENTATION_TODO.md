@@ -78,115 +78,115 @@ Omnibox 2.0 is complete only when all of the following are true:
 
 ### A2 — QML action surface
 
-- [ ] **Add root mode and flow state to `Omnibox.qml`.** Acceptance: opening
+- [x] **Add root mode and flow state to `Omnibox.qml`.** Acceptance: opening
   starts in Search; closing clears the flow and cancels active work.
-- [ ] **Render an eliding breadcrumb above or within the existing compact input
+- [x] **Render an eliding breadcrumb above or within the existing compact input
   surface.** Acceptance: `file › Send to device › desktop` remains readable on
   the current card and does not force a permanent second pane.
-- [ ] **Prototype both `Tab` and `Ctrl+K` action entry.** Acceptance: live QML
+- [x] **Prototype both `Tab` and `Ctrl+K` action entry.** Acceptance: live QML
   testing establishes one canonical documented key with no conflict in the
   text field; the decision is recorded in the PRD open-decision section.
-- [ ] **Render the selected result’s ordered action list.** Acceptance: Enter
+- [x] **Render the selected result’s ordered action list.** Acceptance: Enter
   continues to run the primary action directly; the canonical action key opens
   secondary actions without changing the selected object.
-- [ ] **Render typed argument pickers through the same ListView.** Acceptance:
+- [x] **Render typed argument pickers through the same ListView.** Acceptance:
   enum, integer, string, file, project, workspace, monitor, theme, and device
   arguments validate before advancing.
-- [ ] **Implement Confirm mode.** Acceptance: it identifies action and target,
+- [x] **Implement Confirm mode.** Acceptance: it identifies action and target,
   requires a second explicit Enter, and Escape returns without execution.
-- [ ] **Implement Running and Result modes.** Acceptance: bounded progress,
+- [x] **Implement Running and Result modes.** Acceptance: bounded progress,
   success, exit status, and redacted stderr are visible for `keepOpen` actions.
-- [ ] **Preserve pointer gating across modes.** Acceptance: opening or async
+- [x] **Preserve pointer gating across modes.** Acceptance: opening or async
   reordering cannot activate a row solely because the pointer was already over
   its location.
-- [ ] **Preserve stable selection across asynchronous rebuilds.** Acceptance:
+- [x] **Preserve stable selection across asynchronous rebuilds.** Acceptance:
   selected `Result.id` survives provider/file/window batches when still present.
-- [ ] **Make visual states accessible.** Acceptance: selected, running,
+- [x] **Make visual states accessible.** Acceptance: selected, running,
   successful, warning, and destructive states are distinguishable without color
   alone in one light and one dark Omarchy theme.
 
 ### A3 — Safe executor
 
-- [ ] **Add an argv executor backed by the real `Util.execArgv(argv)` API.**
+- [x] **Add an argv executor backed by the real `Util.execArgv(argv)` API.**
   Acceptance: paths/messages containing spaces, quotes, `$()`, semicolons, and
   leading dashes remain literal; source contract is
   `/usr/share/omarchy/shell/Commons/Util.qml:57-63`.
-- [ ] **Add typed built-ins for app launch, window dispatch, copy text, clipboard
+- [x] **Add typed built-ins for app launch, window dispatch, copy text, clipboard
   paste, and flow continuation.** Acceptance: built-ins accept validated fields,
   not arbitrary command strings.
-- [ ] **Add a captured-process executor for `keepOpen` actions.** Acceptance:
+- [x] **Add a captured-process executor for `keepOpen` actions.** Acceptance:
   latest request wins; timeout/cancel terminates the active process; stale
   stdout/stderr cannot update a newer flow.
-- [ ] **Add a terminal execution policy.** Acceptance: privileged interactive
+- [x] **Add a terminal execution policy.** Acceptance: privileged interactive
   work opens in a visible terminal and never creates an invisible sudo prompt.
-- [ ] **Add a destructive-risk policy.** Acceptance: close window, logout,
+- [x] **Add a destructive-risk policy.** Acceptance: close window, logout,
   reboot, shutdown, package removal, destructive workflow, and equivalent
   provider actions cannot bypass Confirm.
-- [ ] **Bound executor inputs and outputs.** Acceptance: maximum argv count,
+- [x] **Bound executor inputs and outputs.** Acceptance: maximum argv count,
   element bytes, runtime, stdout, and stderr are enforced and adversarially
   tested.
-- [ ] **Retain explicit `>command` expert mode as a separate shell boundary.**
+- [x] **Retain explicit `>command` expert mode as a separate shell boundary.**
   Acceptance: raw commands are visibly labeled, never learned or pinned with
   content, and do not pass through typed action substitution.
 
 ### A4 — Migrate current sources
 
-- [ ] **Migrate applications.** Actions: Open/focus, launch new when supported,
+- [x] **Migrate applications.** Actions: Open/focus, launch new when supported,
   Pin/Unpin; acceptance: AppLibrary icons and primary launch remain correct.
-- [ ] **Migrate windows.** Actions: Focus plus only live-verified workspace,
+- [x] **Migrate windows.** Actions: Focus plus only live-verified workspace,
   monitor, floating/fullscreen, and close operations; acceptance: focus still
   uses the Omarchy Hyprland Lua dispatcher documented at
   [`Omnibox.qml` lines 1064–1068](../Omnibox.qml#L1064-L1068).
-- [ ] **Migrate files.** Actions: Open, Reveal, Open in editor, Terminal here,
+- [x] **Migrate files.** Actions: Open, Reveal, Open in editor, Terminal here,
   Copy path, conditional Taildrop; acceptance: current Enter and `Alt+Enter`
   behavior remains available through typed actions.
-- [ ] **Migrate calculations.** Actions: Copy and Paste; acceptance: current
+- [x] **Migrate calculations.** Actions: Copy and Paste; acceptance: current
   calculator behavior and test vectors are unchanged.
-- [ ] **Migrate web URLs and searches.** Make one default result with engines as
+- [x] **Migrate web URLs and searches.** Make one default result with engines as
   actions; acceptance: configured engines remain hot-reloadable and duplicate
   rows no longer crowd the list.
-- [ ] **Migrate shell expert mode.** Acceptance: terminal/background choices are
+- [x] **Migrate shell expert mode.** Acceptance: terminal/background choices are
   actions and raw command content remains excluded from state.
-- [ ] **Migrate current system rows.** Acceptance: lock, clipboard, emoji, theme,
+- [x] **Migrate current system rows.** Acceptance: lock, clipboard, emoji, theme,
   menu, keybindings, screenshot, suspend, logout, reboot, and shutdown retain
   primary behavior, with confirmations added where policy requires.
-- [ ] **Migrate clipboard text and images.** Acceptance: paste/copy/open behavior
+- [x] **Migrate clipboard text and images.** Acceptance: paste/copy/open behavior
   uses argv-safe helpers and clipboard content never becomes a stable ID or
   metric.
-- [ ] **Migrate SSH hosts.** Actions: Connect and Copy host; acceptance: host
+- [x] **Migrate SSH hosts.** Actions: Connect and Copy host; acceptance: host
   validation remains at least as strict as [`Omnibox.qml` lines 179–180](../Omnibox.qml#L179-L180).
-- [ ] **Temporarily migrate current providers into an internal typed adapter.**
+- [x] **Temporarily migrate current providers into an internal typed adapter.**
   Acceptance: Stage A preserves provider primary activation without expanding
   the public TSV contract; this adapter is deleted in Stage D.
-- [ ] **Remove the old `makeRow(... kind, data ...)` API.** Acceptance: no caller
+- [x] **Remove the old `makeRow(... kind, data ...)` API.** Acceptance: no caller
   creates the single-operation schema from [`Omnibox.qml` lines 385–397](../Omnibox.qml#L385-L397).
-- [ ] **Remove `kind`/`payload` display roles and dispatcher branches.**
+- [x] **Remove `kind`/`payload` display roles and dispatcher branches.**
   Acceptance: [`Omnibox.qml` lines 943–953 and 1038–1089](../Omnibox.qml#L943-L1089)
   are replaced by Result/Action dispatch; no compatibility alias remains.
 
 ### A5 — Ranking and safe learning
 
-- [ ] **Replace fixed source concatenation with one globally sorted candidate
+- [x] **Replace fixed source concatenation with one globally sorted candidate
   list.** Acceptance: exact matches can cross source boundaries and deterministic
   fixtures pass.
-- [ ] **Add source badges without requiring contiguous sections.** Acceptance:
+- [x] **Add source badges without requiring contiguous sections.** Acceptance:
   mixed global results retain provenance and compact row height.
-- [ ] **Add Pin, Unpin, Set alias, Forget, and Reset learning actions.**
+- [x] **Add Pin, Unpin, Set alias, Forget, and Reset learning actions.**
   Acceptance: every mutation is visible and takes effect immediately.
-- [ ] **Version and migrate usage state atomically.** Acceptance: valid current
+- [x] **Version and migrate usage state atomically.** Acceptance: valid current
   app/file/system/SSH history migrates; invalid or sensitive categories are
   dropped; directory/file modes remain `0700`/`0600`.
-- [ ] **Learn stable action IDs with count and recency decay.** Acceptance: no
+- [x] **Learn stable action IDs with count and recency decay.** Acceptance: no
   argv, raw query, path outside already-approved stable file identity, clipboard
   content, calculation, or provider output is added.
-- [ ] **Build the empty state from Pinned, recent safe actions, and deterministic
+- [x] **Build the empty state from Pinned, recent safe actions, and deterministic
   suggestions.** Acceptance: missing targets fail closed and age out.
-- [ ] **Add state inspection and reset UI/actions.** Acceptance: the user can see
+- [x] **Add state inspection and reset UI/actions.** Acceptance: the user can see
   every retained stable ID/alias and remove it without editing JSON.
 
 ### Stage A gate
 
-- [ ] **Pass the Action Kernel gate.** Observable result: every current source
+- [x] **Pass the Action Kernel gate.** Observable result: every current source
   runs through typed Result/Action models; secondary file/window/app/clipboard/
   SSH actions work live; global ranking and safe learning work; confirmation,
   error, cancel, and stale-result cases pass; the obsolete dispatcher is gone.

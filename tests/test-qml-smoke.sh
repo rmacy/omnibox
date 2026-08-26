@@ -10,9 +10,54 @@ fi
 cleanup() { omarchy-shell shell hide bitr0t.omnibox >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 
+matrix=$(omarchy-shell shell call bitr0t.omnibox stageAActionMatrix '')
+[[ $matrix == *'"apps":["app.open","app.launch-new"'* ]]
+[[ $matrix == *'"windows":["window.focus","window.move-workspace","window.move-monitor","window.float","window.fullscreen","window.close"]'* ]]
+[[ $matrix == *'"files":["file.open","file.reveal","file.edit","file.terminal","file.copy-path"'* ]]
+[[ $matrix == *'"calc":["calculation.copy","calculation.paste"]'* ]]
+[[ $matrix == *'"web":["web.open","web.copy-url"]'* ]]
+[[ $matrix == *'"clipboard":["clipboard.paste","clipboard.copy-again"]'* ]]
+[[ $matrix == *'"ssh":["ssh.connect","ssh.copy-host"'* ]]
+[[ $matrix == *'"providers":["provider.run"]'* ]]
+
 [[ $(omarchy-shell shell summon bitr0t.omnibox '{"query":"=7*6"}') == ok ]]
 [[ $(omarchy-shell shell call bitr0t.omnibox currentQuery '') == '=7*6' ]]
-[[ $(omarchy-shell shell call bitr0t.omnibox hintFor 0) == 'Enter copies' ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox hintFor 0) == 'Copy result · Tab actions' ]]
+
+[[ $(omarchy-shell shell call bitr0t.omnibox objectIdAt 0) == calc ]]
+omarchy-shell shell call bitr0t.omnibox enterActions 0 >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Actions ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox objectIdAt 0) == calculation.copy ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox interactionBreadcrumb '') == '= 42' ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox hintFor 0) == Enter ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Search ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox currentQuery '') == '=7*6' ]]
+
+omarchy-shell shell summon bitr0t.omnibox '{"query":"shutdown"}' >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox objectIdAt 0) == sys:shutdown ]]
+omarchy-shell shell call bitr0t.omnibox enterActions 0 >/dev/null
+omarchy-shell shell call bitr0t.omnibox activateAt 0 >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Confirm ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox hintFor 0) == 'Enter confirms · Escape cancels' ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Actions ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+
+omarchy-shell shell summon bitr0t.omnibox '{"query":"ghost"}' >/dev/null
+omarchy-shell shell call bitr0t.omnibox enterActions 0 >/dev/null
+omarchy-shell shell call bitr0t.omnibox activateAt 3 >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Arguments ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox setInteractionQuery smoke-alias) == smoke-alias ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox objectIdAt 0) == argument:* ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+
+[[ $(omarchy-shell shell call bitr0t.omnibox runHealthCheck '') == Running ]]
+sleep 0.2
+[[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Result ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox hintFor 0) == 'Escape returns' ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
 
 omarchy-shell shell summon bitr0t.omnibox '{"query":"ghost"}' >/dev/null
 sleep 1
@@ -31,4 +76,4 @@ omarchy-shell shell summon bitr0t.omnibox '{"query":"smoke-b"}' >/dev/null
 omarchy-shell shell summon bitr0t.omnibox '{"query":"smoke-c"}' >/dev/null
 [[ $(omarchy-shell shell call bitr0t.omnibox currentQuery '') == smoke-c ]]
 
-printf 'PASS QML smoke: IPC, calculator, capped scroll, stale-row rejection, latest query\n'
+printf 'PASS QML smoke: IPC, actions, arguments, confirm, back, capped scroll, stale rows\n'

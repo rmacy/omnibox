@@ -737,23 +737,26 @@ These are product validation thresholds, not remote telemetry requirements.
 | Learning stores sensitive values | Stable IDs only, category allowlist, inspect/reset controls |
 | QML monolith becomes unmaintainable | Extract pure query/ranking/action/workflow logic into tested ES5-compatible JS modules; keep process/UI wiring in QML |
 
-## 14. Open product decisions
+## 14. Product decisions
 
-These decisions must be resolved through a live prototype before Stage A is
-complete:
+Resolved through the Stage A live prototype:
 
-1. Canonical action key: `Tab` or `Ctrl+K`.
-2. Whether `Alt+Enter` remains a documented Reveal shortcut after actions are
-   discoverable.
-3. Whether empty-state recents include stable action IDs immediately or only
-   after explicit pinning.
-4. Which first-party window actions are portable across the supported Omarchy
-   4.x Hyprland command surface.
-5. Whether provider v2 is a major-version clean cutover or a separately named
+1. `Tab` is the canonical action key; `Ctrl+K` is an equivalent alternate.
+2. `Alt+Enter` remains the direct Reveal shortcut for file results.
+3. Safe stable action IDs enter local recency learning after activation; pins
+   remain explicit.
+4. The portable first-party window set is Focus, move to workspace, move to
+   next/previous monitor, toggle floating, tiled fullscreen, and confirmed
+   close through Omarchy’s Hyprland Lua dispatcher surface.
+
+Still to resolve in the matching delivery stages:
+
+5. Provider v2 is a major-version clean cutover or a separately named
    executable directory during one release. The final state must have one
    protocol path, not indefinite dual support.
-6. Exact aggregate-metrics default: enabled locally or opt-in. Content remains
-   forbidden either way.
+6. Aggregate metrics are local-only; the default enabled/opt-in policy is
+   resolved with the metrics implementation. Content remains forbidden either
+   way.
 
 ## 15. Source citations
 
