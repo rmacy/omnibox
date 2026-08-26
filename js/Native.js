@@ -143,7 +143,9 @@ function classify(command) {
     var route = String(command.route || "").toLowerCase();
     var group = String(command.group || "").toLowerCase();
     var args = String(command.args || "").toLowerCase();
-    var destructive = /(^| )(shutdown|reboot|logout|remove|drop|clear|reset|reinstall|uninstall|forget)( |$)/.test(route)
+    var mutatingGroup = /^(refresh|update|install|remove|setup|upgrade|finalize|channel|default|pkg|webapp|tui|drive|branding|font)$/.test(group);
+    var destructive = mutatingGroup
+        || /(^| )(shutdown|reboot|logout|remove|drop|clear|reset|refresh|reinstall|uninstall|forget)( |$)/.test(route)
         || /window close all|channel set|upgrade to/.test(route)
         || route === "omarchy theme set" || route === "omarchy display text size";
     var systemPower = /omarchy system (shutdown|reboot|logout)/.test(route);
@@ -159,11 +161,28 @@ function classify(command) {
         risk: risk,
         lifecycle: graphical || systemPower ? "close"
           : (privileged || interactive || destructive ? "terminal" : "keepOpen"),
-        confirm: destructive,
+        confirm: destructive || remote,
         interactive: interactive,
         privileged: privileged,
         destructive: destructive,
         remote: remote
+    };
+}
+
+function classifyResolved(command, argv) {
+    var policy = classify(command);
+    if (!Array.isArray(argv)) return policy;
+    var resolved = argv.map(function(value) { return String(value).toLowerCase(); }).join(" ");
+    var destructiveArgument = /(^| )(restore|remove|delete|destroy|erase|drop|clear|reset|reinstall|uninstall|forget|prune|format)( |$)/.test(resolved);
+    if (!destructiveArgument) return policy;
+    return {
+        risk: "destructive",
+        lifecycle: policy.lifecycle === "close" ? "close" : "terminal",
+        confirm: true,
+        interactive: policy.interactive,
+        privileged: policy.privileged,
+        destructive: true,
+        remote: policy.remote
     };
 }
 
@@ -359,6 +378,7 @@ if (typeof module !== "undefined") module.exports = {
     parseWords: parseWords,
     routeArgv: routeArgv,
     classify: classify,
+    classifyResolved: classifyResolved,
     search: search,
     intentRows: intentRows,
     bytes: nativeBytes

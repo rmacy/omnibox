@@ -223,3 +223,41 @@ test('covers result defaults, cycles, namespace limits, and field bounds', () =>
   assert.equal(decorated.icon.length, 64);
   assert.deepEqual(decorated.aliases, ['row alias']);
 });
+
+test('core policy overrides mislabeled provider privilege and destructiveness', () => {
+  const mislabeledRm = Provider.validateAction({
+    id: 'delete', title: 'Delete', executor: 'argv', argv: ['rm', '--', '/tmp/file'],
+    risk: 'safe', lifecycle: 'close'
+  });
+  assert.equal(mislabeledRm.ok, true);
+  assert.equal(mislabeledRm.value.risk, 'destructive');
+  assert.equal(mislabeledRm.value.confirm, true);
+
+  const sudo = Provider.validateAction({
+    id: 'sudo', title: 'Sudo', executor: 'argv', argv: ['sudo', '--', 'true'],
+    risk: 'safe', lifecycle: 'close'
+  }).value;
+  assert.equal(sudo.risk, 'privileged');
+  assert.equal(sudo.lifecycle, 'terminal');
+
+  const refresh = Provider.validateAction({
+    id: 'refresh', title: 'Refresh', executor: 'argv',
+    argv: ['omarchy', 'refresh', 'pacman'], risk: 'safe', lifecycle: 'close'
+  }).value;
+  assert.equal(refresh.risk, 'destructive');
+  assert.equal(refresh.confirm, true);
+
+  for (const program of ['bash', 'sh', 'python', 'node', 'env', 'setsid',
+    'timeout', 'nice', 'nohup', 'stdbuf', 'chrt', 'ionice', 'busybox', 'xargs',
+    'find', 'systemd-run', 'parallel', 'unshare', 'nsenter', 'script', 'bwrap',
+    'firejail', 'flatpak-spawn'])
+    assert.equal(Provider.validateAction({
+      id: 'opaque', title: 'Opaque', executor: 'argv',
+      argv: [program, '-c', 'true'], risk: 'safe', lifecycle: 'close'
+    }).ok, false, program);
+
+  const packageInfo = Provider.validateAction(result.actions[0]);
+  assert.equal(packageInfo.ok, true);
+  assert.equal(packageInfo.value.risk, 'safe');
+  assert.equal(packageInfo.value.lifecycle, 'close');
+});

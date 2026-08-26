@@ -755,30 +755,28 @@ Resolved through the Stage A live prototype:
    next/previous monitor, toggle floating, tiled fullscreen, and confirmed
    close through Omarchy’s Hyprland Lua dispatcher surface.
 
-Resolved through the Stage D implementation:
+Resolved implementation decisions:
 
 5. Provider v2 is a major-version clean cutover using sibling
    `*.provider.json` manifests and typed NDJSON. There is no runtime TSV or
    dual-protocol compatibility path.
-
-Still to resolve with the metrics implementation:
-
-6. Aggregate metrics are local-only; the default enabled/opt-in policy remains
-   open. Content is forbidden either way.
+6. Aggregate metrics are enabled by default, local-only, inspectable, resettable,
+   and disabled with `metrics.enabled: false`. The writer accepts only numeric
+   allowlisted aggregate dimensions; content is forbidden.
 
 ## 15. Source citations
 
-[^current-row]: Current one-operation row schema: [`Omnibox.qml` lines 385–397](../Omnibox.qml#L385-L397).
-[^display-model]: Current display projection to `kind` and `payload`: [`Omnibox.qml` lines 943–953](../Omnibox.qml#L943-L953).
-[^current-activation]: Current activation snapshots one row, closes the launcher, and dispatches by `kind`: [`Omnibox.qml` lines 1038–1089](../Omnibox.qml#L1038-L1089).
-[^file-special-case]: Current `Alt` file Reveal branch: [`Omnibox.qml` lines 1053–1078](../Omnibox.qml#L1053-L1078).
-[^fixed-ranking]: Current fixed source order and per-bucket concatenation: [`Omnibox.qml` lines 873–924](../Omnibox.qml#L873-L924).
-[^provider-current]: Current TSV provider contract and opaque executable action: [`Omnibox.qml` lines 731–736 and 823–860](../Omnibox.qml#L731-L860).
-[^learning-current]: Current stable usage allowlist and identity validation: [`Omnibox.qml` lines 150–207](../Omnibox.qml#L150-L207).
-[^current-keys]: Current key handling for Escape, navigation, paging, and Enter: [`Omnibox.qml` lines 1549–1590](../Omnibox.qml#L1549-L1590).
-[^async-current]: Current query serial, pending-run, and stale-result cancellation seams: [`Omnibox.qml` lines 69–79 and 979–990](../Omnibox.qml#L69-L79), plus file/provider process state at [`Omnibox.qml` lines 1132–1184](../Omnibox.qml#L1132-L1184).
-[^provider-query]: Current provider invocation passes the query and starts every discovered provider: [`Omnibox.qml` lines 774–799](../Omnibox.qml#L774-L799).
-[^provider-runner]: Current provider runner executes provider binaries with timeout/output bounds but no sandbox: [`bin/run-providers` lines 40–125](../bin/run-providers#L40-L125).
+[^current-row]: Pre-v2 one-operation row schema: [`Omnibox.qml` lines 385–397](https://github.com/rmacy/omnibox/blob/a94fe24c7a9d29db06ca1c8d7d5300d15bcc467c/Omnibox.qml#L385-L397).
+[^display-model]: Pre-v2 display projection to `kind` and `payload`: [`Omnibox.qml` lines 943–953](https://github.com/rmacy/omnibox/blob/a94fe24c7a9d29db06ca1c8d7d5300d15bcc467c/Omnibox.qml#L943-L953).
+[^current-activation]: Pre-v2 activation closed the launcher and dispatched by `kind`: [`Omnibox.qml` lines 1038–1089](https://github.com/rmacy/omnibox/blob/a94fe24c7a9d29db06ca1c8d7d5300d15bcc467c/Omnibox.qml#L1038-L1089).
+[^file-special-case]: Pre-v2 `Alt` file Reveal branch: [`Omnibox.qml` lines 1053–1078](https://github.com/rmacy/omnibox/blob/a94fe24c7a9d29db06ca1c8d7d5300d15bcc467c/Omnibox.qml#L1053-L1078).
+[^fixed-ranking]: Pre-v2 fixed source order and per-bucket concatenation: [`Omnibox.qml` lines 873–924](https://github.com/rmacy/omnibox/blob/a94fe24c7a9d29db06ca1c8d7d5300d15bcc467c/Omnibox.qml#L873-L924).
+[^provider-current]: Pre-v2 TSV provider contract and opaque executable action: [`Omnibox.qml` lines 731–736 and 823–860](https://github.com/rmacy/omnibox/blob/a94fe24c7a9d29db06ca1c8d7d5300d15bcc467c/Omnibox.qml#L731-L860).
+[^learning-current]: Pre-v2 stable usage allowlist and identity validation: [`Omnibox.qml` lines 150–207](https://github.com/rmacy/omnibox/blob/a94fe24c7a9d29db06ca1c8d7d5300d15bcc467c/Omnibox.qml#L150-L207).
+[^current-keys]: Pre-v2 key handling for Escape, navigation, paging, and Enter: [`Omnibox.qml` lines 1549–1590](https://github.com/rmacy/omnibox/blob/a94fe24c7a9d29db06ca1c8d7d5300d15bcc467c/Omnibox.qml#L1549-L1590).
+[^async-current]: Pre-v2 query serial, pending-run, and stale-result cancellation: [`Omnibox.qml` lines 69–79](https://github.com/rmacy/omnibox/blob/a94fe24c7a9d29db06ca1c8d7d5300d15bcc467c/Omnibox.qml#L69-L79), [979–990](https://github.com/rmacy/omnibox/blob/a94fe24c7a9d29db06ca1c8d7d5300d15bcc467c/Omnibox.qml#L979-L990), and [1132–1184](https://github.com/rmacy/omnibox/blob/a94fe24c7a9d29db06ca1c8d7d5300d15bcc467c/Omnibox.qml#L1132-L1184).
+[^provider-query]: Pre-v2 provider invocation passed every query to every executable: [`Omnibox.qml` lines 774–799](https://github.com/rmacy/omnibox/blob/a94fe24c7a9d29db06ca1c8d7d5300d15bcc467c/Omnibox.qml#L774-L799).
+[^provider-runner]: Pre-v2 provider runner resource bounds without sandboxing: [`bin/run-providers` lines 40–125](https://github.com/rmacy/omnibox/blob/a94fe24c7a9d29db06ca1c8d7d5300d15bcc467c/bin/run-providers#L40-L125).
 [^exec-argv]: Installed Omarchy argv-safe execution contract: `/usr/share/omarchy/shell/Commons/Util.qml`, lines 57–63.
 [^command-catalog]: Installed Omarchy command discovery and JSON schema: `/usr/share/omarchy/bin/omarchy`, lines 538–555 and 669–684.
 [^reminder]: Installed reminder metadata, validation, and execution: `/usr/share/omarchy/bin/omarchy-reminder`, lines 3–5, 135–139, and 168–198.

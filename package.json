@@ -1,12 +1,12 @@
 {
   "name": "omarchy-omnibox",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "private": true,
   "description": "Development tests for the Omnibox Omarchy plugin",
   "type": "commonjs",
   "scripts": {
     "test:js": "node --test tests/test-*.js",
-    "test:shell": "tests/test-provider-runner.sh && tests/test-scan-providers.sh && tests/test-search-files.sh && tests/test-write-usage.sh && tests/test-packages-provider.sh && tests/test-native-state.sh && tests/test-scan-projects.sh && tests/test-write-projects.sh",
+    "test:shell": "tests/test-provider-runner.sh && tests/test-scan-providers.sh && tests/test-search-files.sh && tests/test-write-usage.sh && tests/test-write-metrics.sh && tests/test-packages-provider.sh && tests/test-native-state.sh && tests/test-scan-projects.sh && tests/test-write-projects.sh",
     "test:qml": "tests/test-qml-smoke.sh",
     "test": "npm run test:js && npm run test:shell && npm run test:qml",
     "coverage": "npx --yes c8@12.0.0 --all --include='js/*.js' --reporter=text --reporter=json-summary --check-coverage --lines=90 --functions=90 --branches=90 --statements=90 npm run test:js"

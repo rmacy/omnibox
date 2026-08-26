@@ -41,7 +41,12 @@ version_preview=$(omarchy-shell shell call bitr0t.omnibox nativePreview 'install
 [[ $version_preview == *'Print the installed Omarchy version'* ]]
 [[ $version_preview == *'learning.pin'* ]]
 update_preview=$(omarchy-shell shell call bitr0t.omnibox nativePreview 'Update Omarchy and system packages')
-[[ $update_preview == *'"risk":"privileged","lifecycle":"terminal"'* ]]
+[[ $update_preview == *'"confirm":true,"risk":"destructive","lifecycle":"terminal"'* ]]
+refresh_preview=$(omarchy-shell shell call bitr0t.omnibox nativePreview 'omarchy refresh pacman')
+[[ $refresh_preview == *'"confirm":true,"risk":"destructive","lifecycle":"terminal"'* ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox nativePreview 'night light') == *'Toggle nightlight'* ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox nativePreview 'brightness +5%') == *'Brightness +5%'* ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox nativePreview 'volume mute-toggle') == *'Volume mute-toggle'* ]]
 screenshot_preview=$(omarchy-shell shell call bitr0t.omnibox nativePreview screenshot)
 [[ $screenshot_preview == *'native.run-template'* ]]
 [[ $(omarchy-shell shell call bitr0t.omnibox enterNativeArgumentPreview screenshot) == Arguments ]]
@@ -50,6 +55,11 @@ omarchy-shell shell call bitr0t.omnibox activateAt 0 >/dev/null
 omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
 
 [[ $(omarchy-shell shell call bitr0t.omnibox enterNativeArgumentPreview 'Set the default audio output and move active streams') == Arguments ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox enterNativeArgumentPreview 'Create or restore system snapshots with snapper') == Arguments ]]
+omarchy-shell shell call bitr0t.omnibox setInteractionQuery restore >/dev/null
+omarchy-shell shell call bitr0t.omnibox activateAt 0 >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Confirm ]]
 omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
 
 if (( $(omarchy-shell shell call bitr0t.omnibox projectCount '') > 0 )); then
@@ -97,8 +107,22 @@ sleep 1
 omarchy-shell shell call bitr0t.omnibox setInteractionQuery ghost >/dev/null
 sleep 1
 (( $(omarchy-shell shell call bitr0t.omnibox providerResultCount '') == 0 ))
+[[ $(omarchy-shell shell call bitr0t.omnibox providerPersistenceGuard '') == '{"usagePersisted":false,"actionMetricPersisted":false}' ]]
 [[ $(omarchy-shell shell call bitr0t.omnibox enterProviderConfirmationPreview '') == Confirm ]]
 [[ $(omarchy-shell shell call bitr0t.omnibox detailAt 0) == *'Provider test.destructive'* ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+
+[[ $(omarchy-shell shell call bitr0t.omnibox metricsStatus '') == *'"enabled":true'* ]]
+omarchy-shell shell call bitr0t.omnibox setInteractionQuery 'Inspect Omnibox Metrics' >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox objectIdAt 0) == sys:metrics ]]
+omarchy-shell shell call bitr0t.omnibox activateAt 0 >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Result ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox actionStatus '') == *'Local only'* ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+omarchy-shell shell call bitr0t.omnibox setInteractionQuery 'Reset Omnibox Metrics' >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox objectIdAt 0) == sys:reset-metrics ]]
+omarchy-shell shell call bitr0t.omnibox activateAt 0 >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Confirm ]]
 omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
 
 omarchy-shell shell summon bitr0t.omnibox '{"query":"show reminders"}' >/dev/null
@@ -149,6 +173,17 @@ sleep 0.2
 [[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Result ]]
 [[ $(omarchy-shell shell call bitr0t.omnibox hintFor 0) == 'Escape returns' ]]
 omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox runNativeVersionHealth '') == Running ]]
+sleep 0.2
+[[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Result ]]
+[[ -n $(omarchy-shell shell call bitr0t.omnibox detailAt 0) ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+for source in apps windows files calc web run system clipboard ssh native projects workflows providers; do
+  [[ $(omarchy-shell shell call bitr0t.omnibox runSourceHealth "$source") == Running ]]
+  sleep 0.05
+  [[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Result ]]
+  omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+done
 
 omarchy-shell shell summon bitr0t.omnibox '{"query":"ghost"}' >/dev/null
 sleep 1

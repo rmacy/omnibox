@@ -72,16 +72,41 @@ test('classifies privilege separately from destructiveness', () => {
   assert.equal(shutdown.privileged, false);
   assert.equal(shutdown.lifecycle, 'close');
   const update = Native.classify(catalog.commands[2]);
-  assert.equal(update.risk, 'privileged');
+  assert.equal(update.risk, 'destructive');
   assert.equal(update.lifecycle, 'terminal');
-  assert.equal(update.confirm, false);
-  assert.equal(Native.classify({ route: 'omarchy tailscale send', group: 'tailscale' }).risk, 'remote');
+  assert.equal(update.confirm, true);
+  assert.equal(update.privileged, true);
+  const refreshPacman = Native.classify({
+    route: 'omarchy refresh pacman', group: 'refresh', requires_sudo: true
+  });
+  assert.equal(refreshPacman.risk, 'destructive');
+  assert.equal(refreshPacman.confirm, true);
+  const remote = Native.classify({ route: 'omarchy tailscale send', group: 'tailscale' });
+  assert.equal(remote.risk, 'remote');
+  assert.equal(remote.confirm, true);
   assert.equal(Native.classify({ route: 'omarchy setup foo', group: 'setup' }).interactive, true);
   assert.equal(Native.classify(catalog.commands[0]).confirm, true);
   assert.equal(Native.classify(catalog.commands[0]).lifecycle, 'terminal');
   assert.equal(Native.classify({ route: 'omarchy menu select', group: 'menu' }).interactive, true);
   assert.equal(Native.classify({ route: 'omarchy capture text', group: 'capture' }).lifecycle, 'close');
   assert.equal(Native.classify({ route: 'omarchy finalize setup', group: 'finalize' }).lifecycle, 'terminal');
+});
+
+test('reclassifies destructive typed subcommands after argument resolution', () => {
+  const snapshot = { route: 'omarchy snapshot', group: 'snapshot', requires_sudo: true };
+  const create = Native.classifyResolved(snapshot, ['omarchy', 'snapshot', 'create']);
+  assert.equal(create.risk, 'privileged');
+  assert.equal(create.confirm, false);
+  const restore = Native.classifyResolved(snapshot, ['omarchy', 'snapshot', 'restore']);
+  assert.equal(restore.risk, 'destructive');
+  assert.equal(restore.confirm, true);
+  assert.equal(restore.lifecycle, 'terminal');
+  const remove = Native.classifyResolved(
+    { route: 'omarchy windows vm', group: 'windows', requires_sudo: false },
+    ['omarchy', 'windows', 'vm', 'remove', 'work']
+  );
+  assert.equal(remove.risk, 'destructive');
+  assert.equal(remove.confirm, true);
 });
 
 test('searches every documented field and excludes hidden commands', () => {

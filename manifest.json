@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "bitr0t.omnibox",
   "name": "Omnibox",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "author": "Ryan Macy",
-  "description": "Alfred-style universal launcher: apps, files, windows, math, web search, clipboard, SSH, shell commands, and extensible providers.",
+  "description": "Local-first object-action launcher with native Omarchy commands, projects, workflows, safe learning, metrics, and typed providers.",
   "kinds": [
     "menu"
   ],

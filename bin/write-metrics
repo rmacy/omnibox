@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+target=${1:-}
+expected="$HOME/.local/state/omnibox/metrics.json"
+[[ $target == "$expected" ]] || {
+  printf 'write-metrics: refusing unexpected target: %s\n' "$target" >&2
+  exit 64
+}
+
+IFS= read -r payload
+[[ -n $payload ]] || exit 65
+jq -e '
+  def count: type == "number" and floor == . and . >= 0 and . <= 1000000000;
+  def count_object: type == "object" and all(to_entries[]; .value | count);
+  .version == 1
+  and (keys - ["version","counters","sources","types","actions","latency","workflows"] | length == 0)
+  and (.counters | count_object)
+  and (.counters | keys - ["opens","closes","cancellations","activations","successes","failures","secondaryActions","selectionMoves","actionModeEntries"] | length == 0)
+  and (.sources | count_object)
+  and (.sources | keys - ["apps","windows","files","calc","web","run","system","clipboard","ssh","native","projects","workflows","providers"] | length == 0)
+  and (.types | count_object)
+  and (.types | keys - ["app","window","file","calculation","web","shell","command","clipboard","ssh","provider","project","diagnostic"] | length == 0)
+  and (.actions | count_object)
+  and (.actions | all(keys[]; test("^(apps/(app|learning)|windows/window|files/(file|learning)|calc/calculation|web/web|system/(system|learning)|clipboard/clipboard|ssh/(ssh|learning)|native/(native|learning)|projects/(project|learning)|workflows/(workflow|learning))\\.[A-Za-z0-9._-]{1,80}$")))
+  and (.latency | type == "object" and (keys - ["render","async","completion"] | length == 0))
+  and (.latency | all(to_entries[]; .value | count_object and (keys - ["lt50","50to199","200to999","gte1000"] | length == 0)))
+  and (.workflows | count_object)
+  and (.workflows | keys - ["runs","successes","failures","cancellations","steps"] | length == 0)
+' <<<"$payload" >/dev/null || {
+  printf 'write-metrics: payload rejected\n' >&2
+  exit 65
+}
+
+state_dir=${target%/*}
+umask 077
+mkdir -p -- "$state_dir"
+chmod 700 -- "$state_dir"
+tmp=$(mktemp "$state_dir/.metrics.json.tmp.XXXXXX")
+trap 'rm -f -- "$tmp"' EXIT HUP INT TERM
+printf '%s' "$payload" >"$tmp"
+chmod 600 -- "$tmp"
+mv -f -- "$tmp" "$target"
+chmod 600 -- "$target"
+trap - EXIT HUP INT TERM

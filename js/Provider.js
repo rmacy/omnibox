@@ -110,6 +110,63 @@ function filterContext(manifest, context) {
     return filtered;
 }
 
+function providerBasename(value) {
+    var text = String(value || "");
+    return text.slice(text.lastIndexOf("/") + 1).toLowerCase();
+}
+
+function providerCommandView(argv) {
+    var index = 0;
+    var terminal = false;
+    var privileged = false;
+    var program = providerBasename(argv[index]);
+    if (program === "xdg-terminal-exec") {
+        terminal = true;
+        index += 1;
+        while (index < argv.length && argv[index] !== "--") index += 1;
+        if (argv[index] === "--") index += 1;
+        program = providerBasename(argv[index]);
+    }
+    if (program === "sudo" || program === "doas" || program === "pkexec") {
+        privileged = true;
+        index += 1;
+        while (index < argv.length && String(argv[index]).charAt(0) === "-") {
+            if (argv[index] === "--") { index += 1; break; }
+            index += 1;
+        }
+        program = providerBasename(argv[index]);
+    }
+    return { index: index, program: program, terminal: terminal, privileged: privileged };
+}
+
+function corePolicy(argv, declaredRisk, declaredLifecycle, declaredConfirm) {
+    var view = providerCommandView(argv);
+    var opaque = /^(bash|sh|zsh|fish|dash|env|command|setsid|uwsm-app|python|python3|node|ruby|perl|timeout|nice|nohup|stdbuf|chrt|ionice|busybox|xargs|find|systemd-run|parallel|unshare|nsenter|script|bwrap|firejail|flatpak-spawn)$/.test(view.program);
+    if (!view.program || opaque) return providerError("Provider action uses an opaque interpreter or launcher");
+    var rest = argv.slice(view.index + 1).map(function(value) { return String(value).toLowerCase(); });
+    var destructive = /^(rm|rmdir|unlink|shred|dd|wipefs|poweroff|reboot|shutdown|halt)$/.test(view.program)
+        || /^mkfs/.test(view.program)
+        || (view.program === "pacman" && rest.some(function(value) {
+            return value === "-r" || value.indexOf("-r") === 0 || value === "--remove";
+        }));
+    if (view.program === "omarchy") {
+        var route = rest.join(" ");
+        destructive = destructive
+            || /(^| )(shutdown|reboot|logout|remove|drop|clear|reset|refresh|reinstall|uninstall|forget)( |$)/.test(route)
+            || /^(refresh|update|install|remove|setup|upgrade|channel|default|pkg|webapp|tui|drive|branding|font)( |$)/.test(route);
+    }
+    var risk = destructive ? "destructive" : (view.privileged ? "privileged" : declaredRisk);
+    var lifecycle = view.privileged ? "terminal" : declaredLifecycle;
+    return providerOk({
+        risk: risk,
+        lifecycle: lifecycle,
+        confirm: destructive ? true : declaredConfirm === true,
+        privileged: view.privileged,
+        destructive: destructive,
+        terminalWrapped: view.terminal
+    });
+}
+
 function validateAction(input) {
     if (!input || typeof input !== "object" || !stableId(input.id)) return providerError("Provider action id is invalid");
     var title = boundedString(input.title, "Provider action title", 512, false);
@@ -129,6 +186,10 @@ function validateAction(input) {
         return providerError("Provider action policy is invalid");
     if (risk === "destructive" && input.confirm !== true)
         return providerError("Destructive provider action requires confirmation");
+    var enforced = corePolicy(argv, risk, lifecycle, input.confirm)
+    if (!enforced.ok) return enforced
+    risk = enforced.value.risk
+    lifecycle = enforced.value.lifecycle
     return providerOk({
         id: input.id,
         title: input.title,
@@ -137,7 +198,7 @@ function validateAction(input) {
         argv: argv,
         risk: risk,
         lifecycle: lifecycle,
-        confirm: input.confirm === true,
+        confirm: enforced.value.confirm,
         arguments: []
     });
 }
@@ -202,6 +263,7 @@ if (typeof module !== "undefined") module.exports = {
     queryBody: queryBody,
     filterContext: filterContext,
     validateAction: validateAction,
+    corePolicy: corePolicy,
     validateResult: validateResult,
     stableId: stableId
 };

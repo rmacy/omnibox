@@ -10,6 +10,7 @@ import "js/Jsonc.js" as Jsonc
 import "js/Actions.js" as Actions
 import "js/Execution.js" as Execution
 import "js/Flow.js" as Flow
+import "js/Metrics.js" as Metrics
 import "js/Native.js" as Native
 import "js/Provider.js" as Provider
 import "js/Query.js" as Query
@@ -71,6 +72,10 @@ Item {
   property var pendingWorkflowPlan: null
   property string workflowRunToken: ""
   property int workflowRunSerial: 0
+  property var metrics: Metrics.create()
+  property string metricsPath: Quickshell.env("HOME") + "/.local/state/omnibox/metrics.json"
+  property double openedAt: 0
+  property double actionStartedAt: 0
 
   function resetInteraction() {
     var reset = Flow.reset({})
@@ -109,6 +114,8 @@ Item {
     var payload = ({})
     try { payload = JSON.parse(payloadJson || "{}") } catch (e) { payload = ({}) }
 
+    root.openedAt = Date.now()
+    root.metricIncrement("opens", 1)
     root.resetInteraction()
     root.opened = true
     root.selectedIndex = 0
@@ -123,7 +130,10 @@ Item {
     if (query && query.charAt(0) !== ">") searchTimer.restart()
     else searchTimer.stop()
 
-    Qt.callLater(function() { searchField.forceActiveFocus() })
+    Qt.callLater(function() {
+      root.metricLatency("render", Date.now() - root.openedAt)
+      searchField.forceActiveFocus()
+    })
   }
 
   function close() {
@@ -157,6 +167,7 @@ Item {
   }
 
   function cancel() {
+    var wasOpened = root.opened
     if (root.interactionMode === "Running") root.cancelRunningAction()
     root.opened = false
     var hadQuery = searchField.text.length > 0
@@ -170,6 +181,7 @@ Item {
       root.providerRows = []
       root.stopAsyncSearch()
     }
+    if (wasOpened) root.metricIncrement("closes", 1)
   }
 
   // ---------------------------------------------------------------- config
@@ -198,7 +210,8 @@ Item {
     "maxResults": 8,
     "projects": { "roots": [], "maxDepth": 4, "maxProjects": 200 },
     "workflows": [],
-    "providers": { "unrestricted": [] }
+    "providers": { "unrestricted": [] },
+    "metrics": { "enabled": true }
   })
 
   function configEngines() {
@@ -258,6 +271,10 @@ Item {
         allowed.push(id)
     }
     return allowed
+  }
+
+  function configMetricsEnabled() {
+    return !(root.config.metrics && root.config.metrics.enabled === false)
   }
 
   function applyConfig(value) {
@@ -422,6 +439,53 @@ Item {
     return root.pluginSourceDir() + "/bin/write-projects"
   }
 
+  function metricsWriterPath() {
+    return root.pluginSourceDir() + "/bin/write-metrics"
+  }
+
+  function loadMetrics(raw) {
+    try { root.metrics = Metrics.sanitize(JSON.parse(String(raw || "{}"))) }
+    catch (_metricsLoadError) { root.metrics = Metrics.create() }
+  }
+
+  function saveMetrics(force) {
+    if (!force && !root.configMetricsEnabled()) return
+    metricsWriterProc.payload = JSON.stringify(root.metrics)
+    metricsWriterProc.pending = true
+    if (!metricsWriterProc.running) root.startMetricsWrite()
+  }
+
+  function startMetricsWrite() {
+    if (!metricsWriterProc.pending || metricsWriterProc.running) return
+    metricsWriterProc.pending = false
+    metricsWriterProc.command = [root.metricsWriterPath(), root.metricsPath]
+    metricsWriterProc.running = true
+  }
+
+  function metricIncrement(event, amount) {
+    if (!root.configMetricsEnabled()) return
+    root.metrics = Metrics.increment(root.metrics, event, amount)
+    root.saveMetrics(false)
+  }
+
+  function metricActivation(result, action, secondary) {
+    if (!root.configMetricsEnabled()) return
+    root.metrics = Metrics.recordActivation(root.metrics, result, action, secondary)
+    root.saveMetrics(false)
+  }
+
+  function metricLatency(kind, milliseconds) {
+    if (!root.configMetricsEnabled()) return
+    root.metrics = Metrics.recordLatency(root.metrics, kind, milliseconds)
+    root.saveMetrics(false)
+  }
+
+  function metricWorkflow(steps, outcome) {
+    if (!root.configMetricsEnabled()) return
+    root.metrics = Metrics.recordWorkflow(root.metrics, steps, outcome)
+    root.saveMetrics(false)
+  }
+
   function saveUsage() {
     var keys = []
     for (var k in root.usage) keys.push(k)
@@ -516,6 +580,14 @@ Item {
   }
 
 
+  function projectPathAllowed(path) {
+    var value = String(path || "")
+    var roots = root.configProjectRoots()
+    for (var i = 0; i < roots.length; i++)
+      if (value === roots[i] || value.indexOf(roots[i] + "/") === 0) return true
+    return false
+  }
+
   function sanitizeProjects(value) {
     var source = value && value.version === 1 ? value.projects : value
     if (!Array.isArray(source)) return []
@@ -533,6 +605,7 @@ Item {
         remote: safeRemote,
         refreshedAt: Number(input.refreshedAt) || 0
       })
+      if (!root.projectPathAllowed(input.path)) continue
       if (!checked.ok || seen[checked.value.id]) continue
       seen[checked.value.id] = true
       projects.push(checked.value)
@@ -575,15 +648,30 @@ Item {
 
   function runProjectScan() {
     var roots = root.configProjectRoots()
+    projectScanProc.latestRun += 1
     if (roots.length === 0) {
-      root.projects = []
+      projectScanProc.pending = false
+      projectScanTimeout.stop()
+      if (projectScanProc.running) projectScanProc.running = false
+      root.publishProjects([])
       return
     }
-    projectScanProc.latestRun += 1
-    projectScanProc.activeRun = projectScanProc.latestRun
-    projectScanProc.projects = []
-    projectScanProc.command = [root.projectScannerPath(),
+    projectScanProc.pendingRun = projectScanProc.latestRun
+    projectScanProc.pendingRootsKey = JSON.stringify(roots)
+    projectScanProc.pendingCommand = [root.projectScannerPath(),
       String(root.configProjectDepth()), String(root.configProjectLimit())].concat(roots)
+    projectScanProc.pending = true
+    if (projectScanProc.running) projectScanProc.running = false
+    else root.startPendingProjectScan()
+  }
+
+  function startPendingProjectScan() {
+    if (!projectScanProc.pending || projectScanProc.running) return
+    projectScanProc.activeRun = projectScanProc.pendingRun
+    projectScanProc.activeRootsKey = projectScanProc.pendingRootsKey
+    projectScanProc.projects = []
+    projectScanProc.command = projectScanProc.pendingCommand
+    projectScanProc.pending = false
     projectScanProc.running = true
     projectScanTimeout.restart()
   }
@@ -635,7 +723,9 @@ Item {
     { id: "shutdown", icon: "󰐥", label: "Shutdown", aliases: "shutdown power off turn off", action: "omarchy-system-shutdown" },
     { id: "version", icon: "󰋼", label: "Omarchy Version", aliases: "omarchy version system information", argv: ["omarchy", "version"] },
     { id: "learning", icon: "󰘦", label: "Inspect Omnibox Learning", aliases: "omnibox usage pins aliases learning", builtin: "inspectLearning" },
-    { id: "reset-learning", icon: "󰑐", label: "Reset Omnibox Learning", aliases: "omnibox reset forget all usage aliases pins", builtin: "resetLearning" }
+    { id: "reset-learning", icon: "󰑐", label: "Reset Omnibox Learning", aliases: "omnibox reset forget all usage aliases pins", builtin: "resetLearning" },
+    { id: "metrics", icon: "󰄨", label: "Inspect Omnibox Metrics", aliases: "omnibox local metrics stats inspect", builtin: "inspectMetrics" },
+    { id: "reset-metrics", icon: "󰑐", label: "Reset Omnibox Metrics", aliases: "omnibox reset local metrics stats", builtin: "resetMetrics" }
   ]
 
   function makeCandidate(source, icon, appIcon, title, subtitle, behavior, value, id) {
@@ -982,15 +1072,19 @@ Item {
         argv: payload.split("\u0000"), lifecycle: "keepOpen", risk: "safe"
       })
     } else if (candidate.behavior === "systemBuiltin") {
-      var resetLearning = candidate.value === "resetLearning"
+      var builtinName = String(candidate.value)
+      var isMetrics = builtinName === "inspectMetrics" || builtinName === "resetMetrics"
+      var isReset = builtinName === "resetLearning" || builtinName === "resetMetrics"
       root.appendCheckedAction(actions, {
-        id: resetLearning ? "learning.reset-all" : "learning.inspect",
-        title: resetLearning ? "Reset all learning" : "Inspect learning",
+        id: isMetrics ? (isReset ? "system.metrics-reset" : "system.metrics-inspect")
+          : (isReset ? "learning.reset-all" : "learning.inspect"),
+        title: isMetrics ? (isReset ? "Reset local metrics" : "Inspect local metrics")
+          : (isReset ? "Reset all learning" : "Inspect learning"),
         executor: "builtin",
-        builtin: String(candidate.value),
+        builtin: builtinName,
         lifecycle: "keepOpen",
-        risk: resetLearning ? "destructive" : "safe",
-        confirm: resetLearning
+        risk: isReset ? "destructive" : "safe",
+        confirm: isReset
       })
     } else {
       var destructive = id === "sys:logout" || id === "sys:reboot" || id === "sys:shutdown"
@@ -1169,6 +1263,25 @@ Item {
     return rows
   }
 
+  function fileSearchRoots() {
+    var configured = root.projectScope ? [root.projectScope] : root.configFileRoots()
+    var roots = []
+    for (var i = 0; i < configured.length; i++) {
+      var path = root.homePath(configured[i]).replace(/\/+$/, "")
+      if (path && path.charAt(0) === "/" && roots.indexOf(path) < 0) roots.push(path)
+    }
+    return roots
+  }
+
+  function filePathAllowed(path) {
+    var value = String(path || "")
+    if (value.charAt(0) !== "/" || value.indexOf("\u0000") >= 0) return false
+    var roots = root.fileSearchRoots()
+    for (var i = 0; i < roots.length; i++)
+      if (value === roots[i] || value.indexOf(roots[i] + "/") === 0) return true
+    return false
+  }
+
   function runFileSearch(query) {
     if (!query) {
       root.fileRows = []
@@ -1179,12 +1292,9 @@ Item {
       return
     }
     var pattern = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-    var roots = root.projectScope ? [root.projectScope] : root.configFileRoots()
+    var roots = root.fileSearchRoots()
     var command = [root.fileSearchPath(), "8", "30", "1.2", "0.2", pattern]
-    for (var i = 0; i < roots.length; i++) {
-      var path = root.homePath(roots[i])
-      if (path) command.push(path)
-    }
+    for (var i = 0; i < roots.length; i++) command.push(roots[i])
     root.queueFileSearch(query, command)
   }
 
@@ -1207,6 +1317,7 @@ Item {
     fdProc.collected = ""
     fdProc.command = fdProc.pendingCommand
     fdProc.pending = false
+    fdProc.startedAt = Date.now()
     fdProc.running = true
   }
 
@@ -1359,6 +1470,7 @@ Item {
     var requiredArgs = forceRequired || Native.hasRequiredArgs(command.args)
     return root.nativeCandidateFromSpec({
       route: command.route,
+      group: command.group || "",
       title: command.summary || command.route,
       subtitle: command.route + (command.args ? " " + command.args : ""),
       argv: argv,
@@ -1615,6 +1727,7 @@ Item {
     providersProc.activeQuery = providersProc.pendingQuery
     providersProc.command = providersProc.pendingCommand
     providersProc.pending = false
+    providersProc.startedAt = Date.now()
     providersProc.running = true
   }
 
@@ -1882,6 +1995,13 @@ Item {
     })
   }
 
+  function metricsStatus() {
+    return JSON.stringify({
+      enabled: root.configMetricsEnabled(),
+      summary: Metrics.summary(root.metrics)
+    })
+  }
+
   function objectIdAt(index) {
     var object = root.activeObject(Number(index))
     return object ? String(object.id || "") : ""
@@ -2013,6 +2133,7 @@ Item {
     return JSON.stringify(preview)
   }
 
+
   function enterWorkflowArgumentPreview(query) {
     var candidates = root.workflowRows(String(query || ""))
     if (candidates.length === 0) return "NoResult"
@@ -2069,6 +2190,23 @@ Item {
     return value >= 0 && value < root.providerRows.length ? root.providerRows[value].id : ""
   }
 
+  function providerPersistenceGuard() {
+    var id = "provider:test:file"
+    var result = {
+      id: id, type: "file", source: "providers", title: "Provider content",
+      subtitle: "Must not persist", icon: "", appIcon: "",
+      value: { providerId: "test", data: { path: "/private" }, payload: "/private" }
+    }
+    var action = { id: "file.confidential-name" }
+    root.recordTypedUsage(result, action)
+    var metricProbe = Metrics.recordActivation(root.metrics, result, action, false)
+    return JSON.stringify({
+      usagePersisted: Object.prototype.hasOwnProperty.call(root.usage, id),
+      actionMetricPersisted: Object.prototype.hasOwnProperty.call(
+        metricProbe.actions, "providers/file.confidential-name")
+    })
+  }
+
   function enterProviderConfirmationPreview() {
     var checked = Provider.validateResult("test.destructive", {
       protocol: 2,
@@ -2077,8 +2215,8 @@ Item {
       title: "Destructive provider action",
       value: null,
       actions: [{
-        id: "delete", title: "Delete", executor: "argv", argv: ["false"],
-        lifecycle: "terminal", risk: "destructive", confirm: true
+        id: "delete", title: "Delete", executor: "argv", argv: ["rm", "--", "/tmp/nonexistent"],
+        lifecycle: "close", risk: "safe", confirm: false
       }]
     })
     if (!checked.ok) return "Invalid"
@@ -2114,6 +2252,7 @@ Item {
     if (count === 0) return
     var step = Number(delta)
     if (!isFinite(step) || step === 0) return
+    root.metricIncrement("selectionMoves", Math.abs(step))
     root.disarmPointer()
     root.cursorActive = true
     root.selectedIndex = ((root.selectedIndex + step) % count + count) % count
@@ -2216,6 +2355,7 @@ Item {
   function enterActions(index) {
     var result = root.activeObject(index)
     if (!result || !result.actions || result.actions.length === 0) return
+    root.metricIncrement("actionModeEntries", 1)
     root.searchSelectedIndex = index
     var queryState = Flow.setQuery(root.flowState, searchField.text)
     if (queryState.ok) root.flowState = queryState.value
@@ -2296,6 +2436,26 @@ Item {
     root.rebuildDisplay(false)
   }
 
+  function reclassifyResolvedNativeAction(action) {
+    if (!action || action.builtin !== "runNativeWithArguments" || !root.activeResult) return action
+    var spec
+    try { spec = JSON.parse(String(root.activeResult.value.payload || "")) }
+    catch (_nativePolicySpecError) { return action }
+    var parsed = Native.parseWords(String(root.argumentValues.arguments || ""))
+    if (!parsed.ok || parsed.value.length === 0) return action
+    var argv = (spec.argv || []).concat(parsed.value)
+    var policy = Native.classifyResolved({
+      route: spec.route || "",
+      group: spec.group || "",
+      requires_sudo: spec.requiresSudo === true
+    }, argv)
+    action.risk = policy.risk
+    action.lifecycle = policy.lifecycle
+    action.confirm = policy.confirm
+    root.activeAction = action
+    return action
+  }
+
   function handleArgumentSelection(index) {
     var choice = root.activeObject(index)
     var field = root.activeAction && root.activeAction.arguments[root.activeArgumentIndex]
@@ -2308,6 +2468,7 @@ Item {
       root.rebuildInteractionModel()
       return
     }
+    root.reclassifyResolvedNativeAction(root.activeAction)
     if (Execution.requiresConfirmation(root.activeAction)) root.enterConfirm(root.activeAction)
     else root.runAction(root.activeAction)
   }
@@ -2317,6 +2478,8 @@ Item {
   }
 
   function recordTypedUsage(result, action) {
+    if (result && String(result.id || "").indexOf("diagnostic:") === 0) return
+    if (result && result.source === "providers") return
     if (!result || !action || !root.learnableResultType(result.type)) return
     var persistedValue = result.value.payload
     if (result.source === "projects") {
@@ -2362,13 +2525,27 @@ Item {
     root.interactionMode = "Result"
     root.actionMessage = message
     root.actionSucceeded = ok
+    root.metricIncrement(ok ? "successes" : "failures", 1)
+    if (root.actionStartedAt > 0) {
+      root.metricLatency("completion", Date.now() - root.actionStartedAt)
+      root.actionStartedAt = 0
+    }
     root.actionDetail = String(detail || "")
     root.rebuildInteractionModel()
+  }
+
+  function recordDetachedSuccess() {
+    root.metricIncrement("successes", 1)
+    if (root.actionStartedAt > 0) {
+      root.metricLatency("completion", Date.now() - root.actionStartedAt)
+      root.actionStartedAt = 0
+    }
   }
 
   function executeNativeArgv(action, argv) {
     if (action.lifecycle === "keepOpen") root.startCapturedAction(argv, false)
     else {
+      root.recordDetachedSuccess()
       root.cancel()
       Util.execArgv(Execution.argvFor({
         argv: argv,
@@ -2405,6 +2582,7 @@ Item {
         root.showImmediateResult(true, "Copied project path", actionProject.path)
         return
       }
+      root.recordDetachedSuccess()
       root.cancel()
       if (root.focusProjectWindow(actionProject, true)) return
       var session = Workflows.sessionName(actionProject)
@@ -2469,7 +2647,36 @@ Item {
         return
       }
       var nativeArgv = (runSpec.argv || []).concat(parsedArguments.value)
+      var resolvedNativePolicy = Native.classifyResolved({
+        route: runSpec.route || "",
+        group: runSpec.group || "",
+        requires_sudo: runSpec.requiresSudo === true
+      }, nativeArgv)
+      if (resolvedNativePolicy.confirm && !Execution.requiresConfirmation(action)) {
+        root.showImmediateResult(false, "Confirmation required", runSpec.route || "")
+        return
+      }
       root.executeNativeArgv(action, nativeArgv)
+      return
+    }
+    if (action.builtin === "inspectMetrics") {
+      var metricSummary = Metrics.summary(root.metrics)
+      var metricLines = [
+        "Local only · no query or argument content",
+        "Opens: " + metricSummary.opens,
+        "Activations: " + metricSummary.activations,
+        "Secondary actions: " + metricSummary.secondaryActions,
+        "Successes: " + metricSummary.successes,
+        "Failures: " + metricSummary.failures,
+        "Workflows: " + metricSummary.workflows
+      ]
+      root.showImmediateResult(true, "Omnibox local metrics", metricLines.join("\n"))
+      return
+    }
+    if (action.builtin === "resetMetrics") {
+      root.showImmediateResult(true, "Omnibox metrics reset", "")
+      root.metrics = Metrics.create()
+      root.saveMetrics(true)
       return
     }
     if (action.builtin === "inspectLearning") {
@@ -2523,7 +2730,10 @@ Item {
     }
 
     var closeFirst = action.lifecycle !== "keepOpen"
-    if (closeFirst) root.cancel()
+    if (closeFirst) {
+      root.recordDetachedSuccess()
+      root.cancel()
+    }
     if (action.builtin === "appOpen") {
       if (root.appLibrary) root.appLibrary.launch(payload, result.title)
     } else if (action.builtin === "windowFocus") {
@@ -2568,6 +2778,10 @@ Item {
 
   function runAction(action) {
     if (!root.activeResult || !action) return
+    root.actionStartedAt = Date.now()
+    var primary = root.activeResult.actions && root.activeResult.actions.length > 0
+      ? root.activeResult.actions[0].id : ""
+    root.metricActivation(root.activeResult, action, action.id !== primary)
     root.activeAction = action
     var started = Flow.begin(root.flowState, action.title, { actionId: action.id })
     if (!started.ok) return
@@ -2588,6 +2802,7 @@ Item {
       if (action.lifecycle === "keepOpen") {
         root.startCapturedAction(argv, false)
       } else {
+        root.recordDetachedSuccess()
         root.cancel()
         Util.execArgv(argv)
       }
@@ -2601,6 +2816,7 @@ Item {
       if (action.lifecycle === "keepOpen") root.startCapturedAction(["bash", "-lc", action.command], true)
       else {
         var command = action.command
+        root.recordDetachedSuccess()
         root.cancel()
         Util.execDetached(command)
       }
@@ -2789,6 +3005,7 @@ Item {
     root.workflowRuntime = advanced.value
     if (root.workflowRuntime.done) {
       var success = !root.workflowRuntime.failed && !root.workflowRuntime.canceled
+      root.metricWorkflow(root.workflowPlan.steps.length, success ? "success" : "failure")
       root.showImmediateResult(success,
         root.workflowPlan.title + (success ? " complete" : " failed"),
         root.workflowStatusText(root.workflowRuntime))
@@ -2856,7 +3073,54 @@ Item {
     return root.interactionMode
   }
 
+  function runNativeVersionHealth() {
+    var candidates = root.nativeRows("installed omarchy version")
+    for (var i = 0; i < candidates.length; i++) {
+      var result = root.typedResultForCandidate(candidates[i])
+      if (!result || result.title !== "Print the installed Omarchy version"
+          || result.actions.length === 0) continue
+      root.resetInteraction()
+      root.activeResult = result
+      root.runAction(result.actions[0])
+      return root.interactionMode
+    }
+    return "Unavailable"
+  }
+
+  function runSourceHealth(source) {
+    var types = {
+      apps: "app", windows: "window", files: "file", calc: "calculation",
+      web: "web", run: "shell", system: "command", clipboard: "clipboard",
+      ssh: "ssh", native: "command", projects: "project", workflows: "command",
+      providers: "provider"
+    }
+    var type = types[String(source || "")]
+    if (!type) return "Invalid"
+    var result = Actions.makeResult({
+      id: "diagnostic:" + source,
+      type: type,
+      source: source,
+      title: source + " health action",
+      subtitle: "Captured true command",
+      value: { payload: "" },
+      actions: [{
+        id: "system.health",
+        title: "Health action",
+        executor: "argv",
+        argv: ["true"],
+        lifecycle: "keepOpen",
+        risk: "safe"
+      }]
+    })
+    if (!result.ok) return "Invalid"
+    root.resetInteraction()
+    root.activeResult = result.value
+    root.runAction(result.value.actions[0])
+    return root.interactionMode
+  }
+
   function cancelRunningAction() {
+    root.metricIncrement("cancellations", 1)
     actionTimeoutTimer.stop()
     actionProc.latestRun += 1
     if (actionProc.running) actionProc.running = false
@@ -2864,6 +3128,7 @@ Item {
     workflowProc.latestRun += 1
     if (workflowProc.running) workflowProc.running = false
     if (root.workflowRuntime) {
+      root.metricWorkflow(root.workflowPlan ? root.workflowPlan.steps.length : 0, "canceled")
       var workflowCanceled = Workflows.cancel(root.workflowRuntime, root.workflowRunToken)
       if (workflowCanceled.ok) root.workflowRuntime = workflowCanceled.value
     }
@@ -2980,16 +3245,23 @@ Item {
   Process {
     id: projectScanProc
     property int latestRun: 0
+    property int pendingRun: 0
     property int activeRun: 0
+    property string pendingRootsKey: ""
+    property string activeRootsKey: ""
+    property var pendingCommand: []
+    property bool pending: false
     property var projects: []
     stdout: SplitParser {
       onRead: function(data) {
         if (projectScanProc.activeRun !== projectScanProc.latestRun
+            || projectScanProc.activeRootsKey !== JSON.stringify(root.configProjectRoots())
             || projectScanProc.projects.length >= root.configProjectLimit()) return
         try {
           var input = JSON.parse(String(data || ""))
           input.id = Workflows.projectId(String(input.path || ""))
           var checked = Workflows.validateProject(input)
+          if (!root.projectPathAllowed(input.path)) return
           if (checked.ok) {
             var next = projectScanProc.projects.slice()
             next.push(checked.value)
@@ -2998,9 +3270,11 @@ Item {
         } catch (_projectLineError) { }
       }
     }
+    onRunningChanged: if (!running) Qt.callLater(function() { root.startPendingProjectScan() })
     onExited: function(exitCode, exitStatus) {
       projectScanTimeout.stop()
-      if (projectScanProc.activeRun !== projectScanProc.latestRun) return
+      if (projectScanProc.activeRun !== projectScanProc.latestRun
+          || projectScanProc.activeRootsKey !== JSON.stringify(root.configProjectRoots())) return
       if (exitCode !== 0 || exitStatus !== 0) {
         root.projectScanError = "Project scan exited " + exitCode
         return
@@ -3014,9 +3288,11 @@ Item {
     interval: 4000
     repeat: false
     onTriggered: {
-      projectScanProc.latestRun += 1
+      if (projectScanProc.activeRun === projectScanProc.latestRun) {
+        projectScanProc.latestRun += 1
+        root.projectScanError = "Project scan exceeded 4 seconds"
+      }
       if (projectScanProc.running) projectScanProc.running = false
-      root.projectScanError = "Project scan exceeded 4 seconds"
     }
   }
 
@@ -3183,6 +3459,7 @@ Item {
     property var pendingCommand: []
     property bool pending: false
     property string collected: ""
+    property double startedAt: 0
     stdout: SplitParser {
       onRead: function(data) { fdProc.collected += data + "\n" }
     }
@@ -3191,11 +3468,17 @@ Item {
       if (fdProc.activeRun !== fdProc.latestRun
           || fdProc.activeSerial !== root.querySerial
           || fdProc.activeQuery !== root.currentQuery()) return
+      if (fdProc.startedAt > 0) root.metricLatency("async", Date.now() - fdProc.startedAt)
       var lines = fdProc.collected.split("\n")
       var paths = []
       for (var i = 0; i < lines.length; i++) {
-        var line = lines[i].trim()
-        if (line) paths.push(line)
+        if (!lines[i]) continue
+        try {
+          var entry = JSON.parse(lines[i])
+          var path = String(entry.path || "")
+          if (root.filePathAllowed(path))
+            paths.push(path + (entry.isDir === true ? "/" : ""))
+        } catch (_fileResultError) { }
       }
       root.fileRows = paths
       if (root.opened) root.rebuildDisplay()
@@ -3213,6 +3496,7 @@ Item {
     property string activeQuery: ""
     property var pendingCommand: []
     property bool pending: false
+    property double startedAt: 0
     stdout: SplitParser {
       onRead: function(data) { root.acceptProviderLine(data) }
     }
@@ -3220,8 +3504,11 @@ Item {
     onExited: {
       if (providersProc.activeRun === providersProc.latestRun
           && providersProc.activeSerial === root.querySerial
-          && providersProc.activeQuery === root.currentQuery())
+          && providersProc.activeQuery === root.currentQuery()) {
+        if (providersProc.startedAt > 0)
+          root.metricLatency("async", Date.now() - providersProc.startedAt)
         providerPublishTimer.restart()
+      }
     }
   }
 
@@ -3353,6 +3640,29 @@ Item {
     printErrors: false
     onLoaded: root.loadUsage(text())
     onLoadFailed: { root.usage = ({}) }
+  }
+
+  Process {
+    id: metricsWriterProc
+    property string payload: ""
+    property bool pending: false
+    stdinEnabled: true
+    onStarted: write(payload + "\n")
+    onRunningChanged: if (!running) Qt.callLater(function() { root.startMetricsWrite() })
+    onExited: function(exitCode, exitStatus) {
+      if (exitCode !== 0 || exitStatus !== 0)
+        console.warn("omnibox: secure metrics write failed:", exitCode, exitStatus)
+    }
+  }
+
+  FileView {
+    id: metricsView
+    path: root.metricsPath
+    watchChanges: true
+    printErrors: false
+    onLoaded: root.loadMetrics(text())
+    onLoadFailed: { root.metrics = Metrics.create() }
+    onFileChanged: reload()
   }
 
   FileView {

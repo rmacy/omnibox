@@ -12,7 +12,10 @@ test('keeps safe argv literal and immutable', () => {
 test('routes privileged and terminal actions through visible terminals', () => {
   assert.deepEqual(Execution.argvFor({
     argv: ['omarchy', 'pkg', 'add', 'jq'], lifecycle: 'terminal', risk: 'privileged'
-  }), ['xdg-terminal-exec', '--', 'sudo', '--', 'omarchy', 'pkg', 'add', 'jq']);
+  }), ['xdg-terminal-exec', '--', 'omarchy', 'pkg', 'add', 'jq']);
+  assert.deepEqual(Execution.argvFor({
+    argv: ['sudo', '--', 'true'], lifecycle: 'terminal', risk: 'privileged'
+  }), ['xdg-terminal-exec', '--', 'sudo', '--', 'true']);
   assert.deepEqual(Execution.argvFor({
     argv: ['ssh', 'host'], lifecycle: 'terminal', risk: 'remote'
   }), ['xdg-terminal-exec', '--', 'ssh', 'host']);

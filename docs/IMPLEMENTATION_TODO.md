@@ -406,90 +406,90 @@ Omnibox 2.0 is complete only when all of the following are true:
 
 ### Local aggregate metrics
 
-- [ ] **Define an allowlisted metrics schema.** Acceptance: only aggregate opens,
+- [x] **Define an allowlisted metrics schema.** Acceptance: only aggregate opens,
   transitions, stable first-party source/type/action IDs, selection movement,
   success/failure, workflow step counts, and latency buckets are accepted.
-- [ ] **Reject forbidden values at the writer boundary.** Acceptance: raw query,
+- [x] **Reject forbidden values at the writer boundary.** Acceptance: raw query,
   hash of query, clipboard, path, provider label/output, shell command, SSH host,
   workflow args, and stdout/stderr fixtures cannot be serialized.
-- [ ] **Write metrics atomically at mode `0600`.** Acceptance: concurrent updates,
+- [x] **Write metrics atomically at mode `0600`.** Acceptance: concurrent updates,
   invalid prior state, size cap, reset, and disabled configuration are tested.
-- [ ] **Add an inspect/reset action.** Acceptance: user can view aggregate keys
+- [x] **Add an inspect/reset action.** Acceptance: user can view aggregate keys
   and clear the file without a terminal.
-- [ ] **Capture the pre-feature local baseline before evaluating product
+- [x] **Capture the pre-feature local baseline before evaluating product
   thresholds.** Acceptance: rank-one use, selection correction, cancellation,
   and completion-latency buckets contain no content.
 
 ### Security review
 
-- [ ] **Threat-model every executor and provider boundary.** Acceptance: trust,
+- [x] **Threat-model every executor and provider boundary.** Acceptance: trust,
   input, output, persistence, privilege, confirmation, and cancellation are
   recorded for argv, built-in, workflow, expert shell, and provider actions.
-- [ ] **Test shell metacharacters as literal data.** Acceptance: `$()`, backticks,
+- [x] **Test shell metacharacters as literal data.** Acceptance: `$()`, backticks,
   quotes, semicolons, newlines, leading dashes, Unicode, and long strings cannot
   become commands through typed paths.
-- [ ] **Test destructive-action policy bypasses.** Acceptance: primary action,
+- [x] **Test destructive-action policy bypasses.** Acceptance: primary action,
   alias, pin, empty state, provider result, workflow step, keyboard shortcut, and
   mouse activation all enter Confirm.
-- [ ] **Test visible-terminal privilege policy.** Acceptance: no privileged
+- [x] **Test visible-terminal privilege policy.** Acceptance: no privileged
   interactive scenario leaves a hidden/hung process.
-- [ ] **Test provider exfiltration minimization.** Acceptance: disabled,
+- [x] **Test provider exfiltration minimization.** Acceptance: disabled,
   nonmatching, prefix-only, and restricted-context providers receive no query or
   forbidden context.
-- [ ] **Run a final read-only security review after implementation.** Acceptance:
+- [x] **Run a final read-only security review after implementation.** Acceptance:
   all P0/P1 findings are resolved before release; accepted lower risks are
   documented with evidence.
 
 ### Verification
 
-- [ ] **Add pure unit tests for query, schemas, actions, ranking, flow, policy,
+- [x] **Add pure unit tests for query, schemas, actions, ranking, flow, policy,
   workflow, metrics, and provider v2.** Acceptance: plausible behavior bugs fail
   specific tests rather than source-text assertions.
-- [ ] **Add helper tests for project scan, provider runner, state writers, and
+- [x] **Add helper tests for project scan, provider runner, state writers, and
   captured execution.** Acceptance: tests are deterministic, isolated, bounded,
   and full-suite-safe.
-- [ ] **Extend live QML smoke coverage.** Acceptance: summon, search, actions,
+- [x] **Extend live QML smoke coverage.** Acceptance: summon, search, actions,
   argument selection, back navigation, confirm cancel/accept, running success/
   error, and close are exercised against the real shell IPC.
-- [ ] **Exercise one real action per migrated source.** Acceptance: apps,
+- [x] **Exercise one real action per migrated source.** Acceptance: apps,
   windows, files, calc, web, shell, system, clipboard, SSH, and providers are
   observed on the actual surface.
-- [ ] **Exercise real native examples.** Acceptance: reminder, theme selection,
+- [x] **Exercise real native examples.** Acceptance: reminder, theme selection,
   screenshot mode, one toggle, audio/brightness adjustment, and long-tail
   discovery use installed Omarchy commands.
-- [ ] **Exercise Project Resume repeatedly.** Acceptance: editor/session identity
+- [x] **Exercise Project Resume repeatedly.** Acceptance: editor/session identity
   proves no duplicate identified windows or tmux sessions.
-- [ ] **Verify one light and one dark theme visually.** Acceptance: compact
+- [x] **Verify one light and one dark theme visually.** Acceptance: compact
   layout, breadcrumb, action rows, confirm, running, error, and scroll states are
   readable at the target display scale.
-- [ ] **Run `npm test` and `npm run coverage`.** Acceptance: all tests pass and
+- [x] **Run `npm test` and `npm run coverage`.** Acceptance: all tests pass and
   statements, branches, functions, and lines remain at least 90%.
 - [ ] **Run `omarchy-plugin-validate .`.** Acceptance: validator exits zero from
   a clean checkout.
-- [ ] **Run the live plugin IPC smoke after shell restart.** Acceptance:
+- [x] **Run the live plugin IPC smoke after shell restart.** Acceptance:
   `omarchy-shell shell call bitr0t.omnibox ping '{}'` returns `ok` and the QML
   error scan is empty for changed flows.
 
 ## Documentation, migration, and release
 
-- [ ] **Update README features and keyboard tables.** Acceptance: actions,
+- [x] **Update README features and keyboard tables.** Acceptance: actions,
   breadcrumbs, arguments, confirmations, projects, workflows, and provider v2
   match the live implementation.
-- [ ] **Document configuration with validated real examples.** Acceptance:
+- [x] **Document configuration with validated real examples.** Acceptance:
   project roots, workflows, aliases, metrics, provider enablement, and risk
   policies can be copied without placeholders.
-- [ ] **Document provider trust prominently.** Acceptance: users are told that
+- [x] **Document provider trust prominently.** Acceptance: users are told that
   executable providers are trusted local code with filesystem/network access.
-- [ ] **Document state files and privacy contents.** Acceptance: every persisted
+- [x] **Document state files and privacy contents.** Acceptance: every persisted
   file, mode, allowed fields, reset path, and explicit exclusion is listed.
-- [ ] **Document destructive and privileged behavior.** Acceptance: confirmation
+- [x] **Document destructive and privileged behavior.** Acceptance: confirmation
   and visible-terminal rules match live behavior.
-- [ ] **Document provider v1→v2 migration.** Acceptance: a real current TSV
+- [x] **Document provider v1→v2 migration.** Acceptance: a real current TSV
   example and equivalent validated NDJSON example are shown.
-- [ ] **Document rollback for each stage.** Acceptance: a user can return to the
+- [x] **Document rollback for each stage.** Acceptance: a user can return to the
   prior release/config without editing `/usr/share/omarchy` or losing unrelated
   Omarchy configuration.
-- [ ] **Update manifest version for the clean provider/API cutover.** Acceptance:
+- [x] **Update manifest version for the clean provider/API cutover.** Acceptance:
   version communicates the breaking protocol change and matches release notes.
 - [ ] **Validate a clean public install.** Acceptance: clone/install from
   `https://github.com/rmacy/omnibox`, enable, bind/summon, test one action flow,

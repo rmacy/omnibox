@@ -76,6 +76,37 @@ omarchy-shell shell summon bitr0t.omnibox '{"query":"ghost"}'
 omarchy plugin update bitr0t.omnibox
 ```
 
+### Roll back a release or stage
+
+Back up Omnibox-only state first; older releases do not understand every v2
+state envelope:
+
+```bash
+cp -a ~/.local/state/omnibox ~/.local/state/omnibox.rollback-backup
+git -C ~/.config/omarchy/plugins/bitr0t.omnibox fetch --tags origin
+```
+
+Then check out the required release/stage and restart only the shell:
+
+| Target | Git ref |
+|---|---|
+| Last protocol-1 release | `v1.1.0` |
+| Action kernel | `f3653bd` |
+| Native Omarchy controls | `b113920` |
+| Projects and workflows | `0a20a05` |
+| Provider v2 platform | `e642ed9` |
+| Current v2 release | `v2.0.0` |
+
+```bash
+git -C ~/.config/omarchy/plugins/bitr0t.omnibox checkout v1.1.0
+omarchy restart shell
+```
+
+Return to the update channel with `git checkout main` followed by
+`omarchy plugin update bitr0t.omnibox`. Rollback never edits
+`/usr/share/omarchy` or unrelated Omarchy configuration. Extra v2 JSONC keys are
+ignored by older plugin code.
+
 ### Remove and restore the stock launcher
 
 First remove these two lines from `~/.config/hypr/bindings.lua`:
@@ -181,9 +212,29 @@ Optional: `~/.config/omarchy/extensions/omnibox.jsonc` (hot-reloads):
       { "action": "project.open-or-focus-terminal" }
     ],
     "stopOnFailure": true
-  }]
+  }],
+  // Unrestricted providers require an explicit reviewed-ID allowlist.
+  "providers": { "unrestricted": [] },
+  // Local aggregate-only metrics; no queries, arguments, paths, or content.
+  "metrics": { "enabled": true }
 }
 ```
+
+## Local state and privacy
+
+| Path | Mode | Contents |
+|---|---:|---|
+| `~/.local/state/omnibox/usage.json` | `0600` | Stable allowlisted target/action IDs, counts, recency, pins, aliases |
+| `~/.local/state/omnibox/projects.json` | `0600` | Opt-in Git project metadata and normalized credential-free remotes |
+| `~/.local/state/omnibox/metrics.json` | `0600` | Numeric allowlisted counters and latency buckets only |
+| `~/.cache/omnibox/packages.tsv` | `0600` | Installed package names and versions |
+
+Parent directories are mode `0700`; writers use atomic replacement and reject
+other targets. Metrics are local, inspectable, resettable, and disabled with
+`\"metrics\":{\"enabled\":false}`. They never contain queries, arguments,
+clipboard/file contents, paths, host names, provider output, or stdout/stderr.
+
+See the complete [security and trust-boundary model](docs/SECURITY.md).
 
 ## Writing providers
 
@@ -270,6 +321,7 @@ refreshes only when pacman’s local database changes.
 
 - [Omnibox 2.0 product requirements](docs/PRODUCT_REQUIREMENTS.md)
 - [Corresponding implementation TODO](docs/IMPLEMENTATION_TODO.md)
+- [Security model and trust boundaries](docs/SECURITY.md)
 
 ## Testing
 

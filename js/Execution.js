@@ -7,8 +7,8 @@ function executionCopyArgv(argv) {
 function argvFor(action) {
     action = action || {};
     var argv = executionCopyArgv(action.argv);
-    if (action.risk === "privileged")
-        return ["xdg-terminal-exec", "--", "sudo", "--"].concat(argv);
+    if (action.risk === "privileged" && argv.length > 0 && argv[0] !== "xdg-terminal-exec")
+        return ["xdg-terminal-exec", "--"].concat(argv);
     if (action.lifecycle === "terminal" && argv.length > 0 && argv[0] !== "xdg-terminal-exec")
         return ["xdg-terminal-exec", "--"].concat(argv);
     return argv;
