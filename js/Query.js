@@ -42,6 +42,10 @@ function parse(raw, aliases) {
         mode = "Shell";
         body = text.slice(1).replace(/^\s+/, "");
         forced = true;
+    } else if (text.charAt(0) === "?") {
+        mode = "Agent";
+        body = text.slice(1).replace(/^\s+/, "");
+        forced = true;
     } else if (text.charAt(0) === "=") {
         mode = "Calculator";
         body = text.slice(1).replace(/^\s+/, "");

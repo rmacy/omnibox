@@ -5,7 +5,7 @@ hit Enter.
 
 Omnibox is a `kind: "menu"` plugin for the Omarchy shell (Quickshell). It runs
 inside the long-lived `omarchy-shell` process — no extra daemons — and shows
-ranked results from ten sources as you type:
+ranked results from typed first-party and provider sources as you type:
 
 | Source | What it does |
 |---|---|
@@ -17,6 +17,7 @@ ranked results from ten sources as you type:
 | **Shell** | Prefix `>` to run a command in a terminal or in the background |
 | **System** | Lock, suspend, logout, reboot, shutdown, menu routes, and learned-state controls |
 | **Omarchy commands** | Search the live `omarchy commands --json` catalog and run policy-gated native actions |
+| **Default agent** | Prefix `?` to confirm and send one literal prompt to Omarchy’s configured coding agent |
 | **Clipboard** | Search your Omarchy clipboard history; Enter pastes into the focused window |
 | **SSH** | Hosts from `~/.ssh/config`; Enter opens an `ssh` session in your terminal |
 | **Projects** | Search opt-in Git repositories; resume, edit, open a terminal, scope file search, copy path, or open the remote |
@@ -26,6 +27,18 @@ ranked results from ten sources as you type:
 Screenshot actions check at execution time and use `omasnap` whenever it is
 available. Otherwise they invoke Omarchy’s system-default `omarchy screenshot`
 capture tool. Mode and edit/copy/save are selected inside the action flow.
+
+Agent delegation is explicit: `? review this project` creates one confirmed
+action for `omarchy agent prompt "review this project"`. Omnibox never starts
+the agent while you type, never sends the prompt to providers or file search,
+and never records the prompt. Omarchy launches the configured agent unattended
+in a visible terminal; after confirmation, that agent retains its normal
+filesystem, network, account, and retention permissions. If no default is set,
+the action opens Omarchy’s installed agent picker.
+
+The generic native catalog deliberately excludes every `omarchy agent...`
+launcher route, so an unprefixed search, learned recent, pin, or alias cannot
+bypass the `?` confirmation boundary.
 
 Every result has a primary action plus a discoverable action palette. Press
 **Tab** or **Ctrl+K** to act on a selected app, window, file, calculation, URL,
@@ -95,7 +108,8 @@ Then check out the required release/stage and restart only the shell:
 | Native Omarchy controls | `b113920` |
 | Projects and workflows | `0a20a05` |
 | Provider v2 platform | `e642ed9` |
-| Current v2 release | `v2.0.0` |
+| Omnibox 2.0 | `v2.0.0` |
+| Current default-agent release | `v2.1.0` |
 
 ```bash
 git -C ~/.config/omarchy/plugins/bitr0t.omnibox checkout v1.1.0
@@ -148,6 +162,7 @@ rm -rf ~/.local/state/omnibox
 | Prefix | Meaning |
 |---|---|
 | `>` | Shell command (`>uname -a` → run in terminal / background) |
+| `?` | Confirm and delegate to the Omarchy default agent (`? review this project`) |
 | `=` | Force calculator (`=42*2`) |
 | none | Apps, windows, files, math auto-detect, web, everything |
 
@@ -233,6 +248,9 @@ Parent directories are mode `0700`; writers use atomic replacement and reject
 other targets. Metrics are local, inspectable, resettable, and disabled with
 `\"metrics\":{\"enabled\":false}`. They never contain queries, arguments,
 clipboard/file contents, paths, host names, provider output, or stdout/stderr.
+Agent prompts are also excluded from local state and metrics. After explicit
+confirmation they are passed to the configured external agent, whose own
+provider/account retention policy applies.
 
 See the complete [security and trust-boundary model](docs/SECURITY.md).
 

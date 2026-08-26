@@ -191,6 +191,11 @@ function nativeHaystack(command) {
         .concat(command.aliases || []).concat(command.examples || []).join(" ");
 }
 
+function reservedCommand(command) {
+    var route = String(command && command.route || "").replace(/^\s+|\s+$/g, "");
+    return /^omarchy agent(?:\s|$)/.test(route);
+}
+
 function search(commands, query, scoreFn, limit) {
     if (!Array.isArray(commands)) return [];
     var q = String(query || "").replace(/^\s+|\s+$/g, "");
@@ -199,7 +204,7 @@ function search(commands, query, scoreFn, limit) {
     var rows = [];
     for (var i = 0; i < commands.length; i++) {
         var command = commands[i];
-        if (!command || command.hidden) continue;
+        if (!command || command.hidden || reservedCommand(command)) continue;
         var haystack = nativeHaystack(command);
         var score;
         if (typeof scoreFn === "function") score = scoreFn(q, haystack);
@@ -241,6 +246,44 @@ function nativeIntent(id, title, subtitle, argv, score, risk, lifecycle, confirm
         arguments: [],
         provenance: "Omarchy native adapter"
     };
+}
+
+function agentIntent(prompt, defaultAgent) {
+    var value = String(prompt || "").replace(/^\s+|\s+$/g, "");
+    if (nativeBytes(value) > 4096) return null;
+    var agent = String(defaultAgent || "");
+    var configured = /^[a-z0-9][a-z0-9._-]{0,63}$/.test(agent) && agent !== "unset";
+    if (!configured) {
+        var setup = nativeIntent("native:agent:setup", "Choose a default coding agent",
+            "Required before an LLM prompt can run", ["omarchy", "agent", "--pick"],
+            -120, "safe", "close", false);
+        setup.actionId = "native.agent-setup";
+        setup.actionTitle = "Choose agent";
+        setup.learnable = false;
+        setup.confirmDetail = "Open Omarchy’s installed default-agent picker.";
+        setup.route = "omarchy agent --pick";
+        setup.provenance = "Omarchy default-agent launcher";
+        return setup;
+    }
+    var labels = {
+        pi: "Pi", omp: "Oh My Pi", opencode: "OpenCode", claude: "Claude Code",
+        codex: "Codex", grok: "Grok", gemini: "Gemini", copilot: "GitHub Copilot",
+        crush: "Crush"
+    };
+    var title = value ? "Ask " + (labels[agent] || agent) : "Open " + (labels[agent] || agent);
+    var preview = value.replace(/\s+/g, " ");
+    if (preview.length > 160) preview = preview.slice(0, 157) + "...";
+    var argv = value ? ["omarchy", "agent", "prompt", value] : ["omarchy", "agent"];
+    var result = nativeIntent("native:agent:prompt", title,
+        preview || "Open the configured Omarchy coding agent", argv,
+        -120, "remote", "close", true);
+    result.actionId = "native.agent-prompt";
+    result.actionTitle = value ? "Send prompt" : "Open agent";
+    result.learnable = false;
+    result.confirmDetail = "Omarchy launches the configured agent unattended with filesystem and network access.\nPrompt: " + (value || "(interactive session)");
+    result.route = value ? "omarchy agent prompt" : "omarchy agent";
+    result.provenance = "Omarchy default-agent launcher";
+    return result;
 }
 
 function intentRows(query, context) {
@@ -381,7 +424,9 @@ if (typeof module !== "undefined") module.exports = {
     routeArgv: routeArgv,
     classify: classify,
     classifyResolved: classifyResolved,
+    reservedCommand: reservedCommand,
     search: search,
     intentRows: intentRows,
+    agentIntent: agentIntent,
     bytes: nativeBytes
 };

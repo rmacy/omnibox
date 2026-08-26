@@ -5,6 +5,7 @@ const Execution = require('../js/Execution.js');
 const Metrics = require('../js/Metrics.js');
 const Native = require('../js/Native.js');
 const Provider = require('../js/Provider.js');
+const Query = require('../js/Query.js');
 const Workflows = require('../js/Workflows.js');
 
 test('metacharacters remain literal across every typed argv boundary', () => {
@@ -19,7 +20,17 @@ test('metacharacters remain literal across every typed argv boundary', () => {
     });
     assert.equal(action.ok, true, value);
     assert.equal(Execution.argvFor(action.value)[2], value);
+    const parsedPrompt = Query.parse(`? ${value}`);
+    const agent = Native.agentIntent(parsedPrompt.body, 'codex');
+    assert.equal(agent.argv.length, 4);
+    assert.equal(agent.argv[3], value);
+    assert.equal(agent.confirm, true);
+    assert.deepEqual(Execution.argvFor(agent), agent.argv);
   }
+  assert.equal(Native.reservedCommand({ route: 'omarchy agent prompt' }), true);
+  assert.deepEqual(Native.search([
+    { route: 'omarchy agent prompt', summary: 'Launch default agent with prompt' }
+  ], 'agent', () => 0, 8), []);
   const reminder = Native.intentRows('remind 10 $(touch /tmp/no);', {})[0];
   assert.equal(reminder.argv[3], '$(touch /tmp/no);');
   assert.deepEqual(Native.parseWords("'$(touch /tmp/no)' \"semi;colon\"").value,

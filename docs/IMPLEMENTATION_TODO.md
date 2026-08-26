@@ -402,6 +402,36 @@ Omnibox 2.0 is complete only when all of the following are true:
   fixtures remain bounded; shipped provider and docs use v2; TSV execution is
   absent.
 
+## Stage E — Default-agent delegation
+
+- [x] **Add explicit `?` Agent query mode.** Acceptance: only a trimmed leading
+  `?` selects Agent mode and the remainder is retained verbatim as bounded
+  prompt data.
+- [x] **Read the configured Omarchy default agent.** Acceptance: cached native
+  state reports a bounded agent ID and an unset default remains explicit.
+- [x] **Build one stable native agent result.** Acceptance: configured prompts
+  resolve to `['omarchy','agent','prompt',prompt]`; result/action IDs contain no
+  prompt text.
+- [x] **Require confirmation and a visible terminal.** Acceptance: every prompt
+  states the unattended-agent trust boundary before terminal delegation.
+- [x] **Isolate prompt queries from other sources.** Acceptance: file search,
+  providers, learning, pins, aliases, recents, and detailed metrics receive no
+  prompt content.
+- [x] **Handle an unset default agent.** Acceptance: the only executable action
+  opens installed `omarchy agent --pick`; Omnibox does not claim prompt success.
+- [x] **Test literal prompt argv and privacy boundaries.** Acceptance: shell
+  metacharacters/newlines stay one argv element and adversarial prompts cannot
+  enter state or source fan-out.
+- [x] **Pass the Default-agent gate live.** Observable result: configured and
+  unset previews, Confirm cancel, action provenance, QML IPC, coverage, and
+  validator pass without starting an agent during search.
+
+### Stage E gate
+
+- [x] **Pass the Default-agent delegation gate.** Observable result: `? <prompt>`
+  creates exactly one confirmed native action through the Omarchy default-agent
+  launcher, and prompt content remains ephemeral.
+
 ## Cross-cutting metrics, security, and quality
 
 ### Local aggregate metrics
@@ -500,9 +530,8 @@ Omnibox 2.0 is complete only when all of the following are true:
 
 ## Deferred backlog
 
-These items are intentionally not prerequisites for Omnibox 2.0:
+These items remain intentionally outside the Omnibox 2.0 release scope:
 
-- [ ] LLM or unrestricted natural-language command planning.
 - [ ] Browser history or open-tab integration.
 - [ ] Email, calendar, contacts, or cloud-service indexing.
 - [ ] Semantic/full-content filesystem index.

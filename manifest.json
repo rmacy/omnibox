@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "bitr0t.omnibox",
   "name": "Omnibox",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "author": "Ryan Macy",
-  "description": "Local-first object-action launcher with native Omarchy commands, projects, workflows, safe learning, metrics, and typed providers.",
+  "description": "Local-first object-action launcher with native Omarchy commands, default-agent delegation, projects, workflows, safe learning, metrics, and typed providers.",
   "kinds": [
     "menu"
   ],

@@ -13,6 +13,7 @@ case "$*" in
   "bluetooth power is-on") exit 0 ;;
   "toggle enabled bar-off") exit 1 ;;
   "brightness display --no-osd") printf '42%%\n' ;;
+  "default agent") printf '%s\n' "${OMNIBOX_TEST_DEFAULT_AGENT:-codex}" ;;
   "display text size") printf 'Text size: 14px, GTK factor: 1.1\nTerminal: 11pt\n' ;;
   *) exit 1 ;;
 esac
@@ -24,5 +25,7 @@ printf '#!/usr/bin/env bash\nexit 0\n' >"$tmp/tmux"
 chmod +x "$tmp/tmux"
 
 actual=$(PATH="$tmp:$PATH" "$root/bin/native-state")
-expected=$'idle\tstay awake\nnightlight\ton (4200K)\nbluetooth\ton\nbar\tvisible\nomasnap\tavailable\ntmux\tavailable\nbrightness\t42%\ntext-size\tText size: 14px, GTK factor: 1.1 Terminal: 11pt'
+expected=$'idle\tstay awake\nnightlight\ton (4200K)\nbluetooth\ton\nbar\tvisible\nomasnap\tavailable\ntmux\tavailable\ndefault-agent\tcodex\nbrightness\t42%\ntext-size\tText size: 14px, GTK factor: 1.1 Terminal: 11pt'
 [[ $actual == "$expected" ]]
+invalid=$(OMNIBOX_TEST_DEFAULT_AGENT='bad agent' PATH="$tmp:$PATH" "$root/bin/native-state")
+[[ $invalid == *$'default-agent\tunset'* ]]

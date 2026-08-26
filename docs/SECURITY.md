@@ -19,6 +19,8 @@ requirements remain in [PRODUCT_REQUIREMENTS.md](./PRODUCT_REQUIREMENTS.md).
    timeout, and output limits are not a sandbox.
 7. Asynchronous results publish only when run serial, query serial, and query
    text still match the latest request.
+8. Agent prompts require the explicit `?` mode and Confirm. They are never
+   treated as shell code or sent to other search sources.
 
 ## Boundary matrix
 
@@ -29,12 +31,39 @@ requirements remain in [PRODUCT_REQUIREMENTS.md](./PRODUCT_REQUIREMENTS.md).
 | Built-in action | First-party dispatcher ID | Validated result values and typed arguments | Fixed dispatcher branch | Stable result/action IDs only | Per-type validation, no dynamic function lookup |
 | Expert shell | User explicitly types `>` | Entire command is intentionally shell code | Trusted `bash -lc` boundary | Never learned or pinned with content | Separate mode and visible Shell provenance |
 | Native catalog | Installed `omarchy commands --json` | Catalog metadata and typed arguments | argv or visible terminal | Safe no-argument route/action IDs only | Hidden filtering, required-arg parser, independent destructive policy |
+| Default agent | Installed `omarchy agent prompt` launcher and configured agent ID | Explicit prompt after `?` | Confirmed visible terminal; configured agent runs unattended | Stable native source/action aggregate only | One argv element, no source fan-out, no response capture |
 | Workflow | Validated registered steps | Selected stable project identity | One registered step at a time | Workflow ID and approved project identity only | Plan preview, confirmation, stop-on-failure, cancel/token checks |
 | Provider manifest | Reviewed local manifest | Triggered query body, allowlisted context | Provider executable | None by core learning | Explicit `enabled`, trigger policy, unrestricted allowlist |
 | Provider result | Reviewed provider still treated as data producer | NDJSON fields and argv | Validated argv only | Provider result/action content excluded | Namespace, schema, risk override, row/byte/time caps |
 | Usage state | Core writer | Stable app/file/system/SSH/native/project/workflow identity | None | `usage.json`, mode `0600` | Versioned sanitizer, exact target writer, atomic replace |
 | Project cache | Scanner and Git metadata | Repository names/paths/remotes | None | `projects.json`, mode `0600` | Opt-in roots, depth/cap, credential remote rejection |
 | Metrics | Core allowlisted events | Numeric aggregate counts only | None | `metrics.json`, mode `0600` | Pure sanitizer plus independent strict writer schema |
+
+## Default-agent trust
+
+`? <prompt>` delegates to `omarchy agent prompt <prompt>` only after Confirm.
+Omnibox does not invoke Codex, Claude, OMP, or another agent binary directly.
+The installed Omarchy launcher selects the user’s configured default and starts
+it with that agent’s unattended/auto-approval mode.
+
+The configured agent has the user’s normal filesystem and network authority and
+may execute commands. Confirmation is a trust-boundary disclosure, not a
+sandbox. The prompt is one literal argv element; it is not shell-expanded by
+Omnibox. Before confirmation it is excluded from file search and every provider.
+It is never learned, pinned, aliased, added to recents, written to metrics, or
+captured as output. Once launched, the agent/account provider’s own retention
+and telemetry policies apply.
+
+All installed `omarchy agent...` catalog routes are reserved from generic
+native search and cached native recents. This prevents an unprefixed,
+unconfirmed alternate path to the unattended launcher.
+
+Dynamic result labels, details, icons, and badges use QML `Text.PlainText`.
+Prompt text such as `<img src="https://…">` cannot trigger rich-text resource
+loading before confirmation.
+
+When no default agent is configured, Omnibox exposes only the installed
+`omarchy agent --pick` setup route. No prompt is sent.
 
 ## Provider trust
 
@@ -106,8 +135,9 @@ target and use temporary-file plus atomic-rename replacement.
   trust, literal metacharacter argv.
 - `tests/test-execution.js`: visible-terminal privilege policy, literal argv,
   confirmation and captured-output bounds.
-- `tests/test-native.js`: catalog policy, sudo-not-safety, destructive non-sudo
-  commands, typed arguments without expansion.
+- `tests/test-native.js`: catalog policy, default-agent delegation, literal
+  prompt argv, sudo-not-safety, destructive non-sudo commands, typed arguments
+  without expansion.
 - `tests/test-workflows.js`: registered-only plans, remote credential rejection,
   sequencing, optional/required failure, cancellation and stale tokens.
 - `tests/test-provider.js`: manifest/query/context/result/action validation,
@@ -117,7 +147,8 @@ target and use temporary-file plus atomic-rename replacement.
 - `tests/test-write-metrics.sh`: writer-boundary rejection of content and unknown
   dimensions.
 - `tests/test-qml-smoke.sh`: live action/argument/confirmation/result state,
-  native policy, Project Resume identity, provider provenance, and metrics UI.
+  agent source isolation and Confirm disclosure, native policy, Project Resume
+  identity, provider provenance, and metrics UI.
 
 ## Final review hardening
 

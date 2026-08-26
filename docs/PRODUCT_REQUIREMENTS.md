@@ -88,11 +88,19 @@ contents must not be recorded as usage metrics.
 Input-derived values must be passed as argv elements, failures must be visible,
 and destructive or privileged actions must have explicit execution policies.
 
+### G6 — Delegate explicit LLM jobs to Omarchy
+
+Omnibox must offer an explicit `? <prompt>` mode that delegates to the
+user-configured Omarchy default coding agent. Omnibox does not choose a model,
+translate the response into its own actions, or start an agent for an
+unprefixed query.
+
 ## 4. Non-goals
 
 The initial Omnibox 2.0 scope does **not** include:
 
-- An LLM that converts unrestricted natural language into shell commands.
+- Automatic or silent conversion of unprefixed natural language into shell
+  commands or Omnibox actions.
 - Browser-history scraping, email, calendar, or cloud-account indexing.
 - Semantic filesystem indexing or a background content-indexing daemon.
 - A provider marketplace or automatic installation of third-party providers.
@@ -124,6 +132,8 @@ windows, files, terminals, projects, and system controls.
    storing sensitive input.
 6. **Extend locally:** add trusted typed results and actions without modifying
    the core QML file.
+7. **Delegate an open-ended job:** explicitly hand a prompt to the configured
+   Omarchy agent without opening a terminal and retyping it.
 
 ## 6. Product principles
 
@@ -143,6 +153,8 @@ windows, files, terminals, projects, and system controls.
 9. **Providers are trusted code.** Their trust boundary must be explicit.
 10. **Boring implementation wins.** Reuse Quickshell, Omarchy CLI contracts,
     and the existing latest-request-wins process lifecycle; add no daemon.
+11. **Agent delegation is explicit.** Only the `?` prefix crosses the LLM trust
+    boundary; Omnibox reuses Omarchy’s configured agent and launcher unchanged.
 
 ## 7. Interaction requirements
 
@@ -626,6 +638,46 @@ Forbidden data:
 Metrics remain local, mode `0600`, inspectable, resettable, and disabled by one
 configuration flag.
 
+### FR12 — Explicit default-agent delegation
+
+An agent prompt is recognized only when the trimmed query begins with `?`.
+The remaining text is passed as one argv element:
+
+```bash
+omarchy agent prompt "<prompt>"
+```
+
+Requirements:
+
+- Agent mode produces one stable first-party native result; its ID and action
+  ID contain no prompt content.
+- The prompt is never sent to file search, providers, learning, aliases, pins,
+  recents, or detailed action metrics.
+- The row is built synchronously. No model or agent process starts while the
+  user types.
+- Every installed `omarchy agent...` route is reserved from generic catalog
+  search and cached learning; only Agent mode may expose a launcher route.
+- A configured prompt’s activation always enters Confirm. Confirmation states
+  that Omarchy launches the configured agent with unattended permissions and
+  shows the concrete prompt.
+- Confirmed activation delegates through `omarchy agent prompt` with lifecycle
+  `close`; that installed launcher opens the visible agent terminal itself, so
+  Omnibox does not add a redundant terminal wrapper or invoke an agent binary.
+- `$()`, backticks, quotes, semicolons, newlines, and leading dashes remain
+  literal prompt data rather than shell syntax.
+- If no default agent is configured, the row offers the installed
+  `omarchy agent --pick` setup path instead of pretending the prompt ran.
+- Omnibox does not capture the response, parse proposed commands, silently
+  execute a plan, or persist conversation content.
+- Prompt labels and confirmation details render as plain text; rich-text tags or
+  remote resource references are never interpreted by QML.
+
+Privacy boundary: prompt text leaves Omnibox only after explicit confirmation
+and is then governed by the configured agent’s filesystem, network, account,
+and retention policies. Performance budget: parsing and row construction stay
+inside the cached-source render budget; agent startup is user-triggered and
+excluded from local completion-latency goals.
+
 ## 9. Performance requirements
 
 1. Cached sources render before asynchronous providers or file search complete.
@@ -703,6 +755,18 @@ Scope:
 
 Gate: the TSV path is removed, malformed/adversarial providers are bounded, and
 no provider receives an unrestricted query without explicit policy.
+
+### Stage E — Default-agent delegation
+
+Scope:
+
+- Explicit `?` query mode.
+- Default-agent discovery through installed Omarchy commands.
+- Confirmed visible-terminal delegation with prompt isolation.
+
+Gate: a literal prompt reaches `omarchy agent prompt` as one argv element only
+after Confirm; unrelated sources receive nothing; no prompt content enters
+usage or metrics; unset-agent setup and configured-agent flows pass live.
 
 ## 12. Product acceptance metrics
 

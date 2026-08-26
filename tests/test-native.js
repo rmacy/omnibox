@@ -145,6 +145,48 @@ test('selects live themes with spaces and literal argv', () => {
   assert.equal(rows[0].confirm, true);
 });
 
+test('builds confirmed default-agent delegation without prompt-derived identity', () => {
+  const prompt = 'fix $(touch /tmp/no); `id`\n--keep-this-literal';
+  const agent = Native.agentIntent(prompt, 'codex');
+  assert.equal(agent.id, 'native:agent:prompt');
+  assert.deepEqual(agent.argv, ['omarchy', 'agent', 'prompt', prompt]);
+  assert.equal(agent.actionId, 'native.agent-prompt');
+  assert.equal(agent.risk, 'remote');
+  assert.equal(agent.lifecycle, 'close');
+  assert.equal(agent.confirm, true);
+  assert.match(agent.confirmDetail, /unattended/);
+  assert.equal(agent.confirmDetail.includes('$(touch'), true);
+  assert.equal(Native.agentIntent('different prompt', 'codex').id, agent.id);
+
+  const interactive = Native.agentIntent('', 'omp');
+  assert.deepEqual(interactive.argv, ['omarchy', 'agent']);
+  assert.equal(interactive.title, 'Open Oh My Pi');
+
+  for (const value of ['', 'unset', 'bad agent', '../codex']) {
+    const setup = Native.agentIntent('private prompt', value);
+    assert.deepEqual(setup.argv, ['omarchy', 'agent', '--pick']);
+    assert.equal(setup.actionId, 'native.agent-setup');
+    assert.equal(setup.confirm, false);
+    assert.equal(JSON.stringify(setup).includes('private prompt'), false);
+  }
+  assert.equal(Native.agentIntent('x'.repeat(4097), 'codex'), null);
+});
+
+test('reserves all agent-launcher catalog routes for explicit agent mode', () => {
+  const commands = [
+    { route: 'omarchy agent', summary: 'Launch the default coding agent' },
+    { route: 'omarchy agent prompt', summary: 'Launch with prompt' },
+    { route: 'omarchy agent crash', summary: 'Diagnose with agent' },
+    { route: 'omarchy default agent', summary: 'Show the configured agent' }
+  ];
+  const score = (query, text) => text.toLowerCase().includes(query) ? 0 : null;
+  assert.deepEqual(Native.search(commands, 'agent', score, 8).map(row => row.route),
+    ['omarchy default agent']);
+  assert.equal(Native.reservedCommand(commands[0]), true);
+  assert.equal(Native.reservedCommand({ route: 'omarchy agentish' }), false);
+  assert.equal(Native.reservedCommand(null), false);
+});
+
 test('builds screenshot, toggle, audio, brightness, and text-size intents', () => {
   assert.deepEqual(Native.intentRows('screenshot region copy', {})[0].argv,
     ['omarchy', 'capture', 'screenshot', 'region', 'copy']);

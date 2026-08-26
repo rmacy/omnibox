@@ -42,6 +42,13 @@ else
   printf 'tmux\tunavailable\n'
 fi
 
+default_agent=$(omarchy default agent 2>/dev/null | clean || true)
+if [[ $default_agent =~ ^[a-z0-9][a-z0-9._-]{0,63}$ ]]; then
+  printf 'default-agent\t%s\n' "$default_agent"
+else
+  printf 'default-agent\tunset\n'
+fi
+
 brightness=$(omarchy brightness display --no-osd 2>/dev/null | clean || true)
 [[ -n $brightness ]] && printf 'brightness\t%s\n' "$brightness"
 

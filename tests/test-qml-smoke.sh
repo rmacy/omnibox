@@ -61,6 +61,44 @@ omarchy-shell shell call bitr0t.omnibox setInteractionQuery restore >/dev/null
 omarchy-shell shell call bitr0t.omnibox activateAt 0 >/dev/null
 [[ $(omarchy-shell shell call bitr0t.omnibox currentMode '') == Confirm ]]
 omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
+
+generic_agent_preview=$(omarchy-shell shell call bitr0t.omnibox nativePreview 'Launch the default coding agent in a terminal')
+[[ $generic_agent_preview != *'"title":"Launch the default coding agent in a terminal"'* ]]
+agent_prompt='fix $(touch /tmp/omnibox-agent-noexec); `id`; --literal <img src="http://127.0.0.1:9/no">'
+agent_preview=$(omarchy-shell shell call bitr0t.omnibox agentPreview "$agent_prompt")
+jq -e --arg prompt "$agent_prompt" '
+  .ok == true and .mode == "Agent" and .source == "native"
+  and .actionId == "native.agent-prompt"
+  and .argv == ["omarchy","agent","prompt",$prompt]
+  and .lifecycle == "close" and .risk == "remote" and .confirm == true
+' <<<"$agent_preview" >/dev/null
+agent_id=$(jq -r '.id' <<<"$agent_preview")
+[[ $(omarchy-shell shell call bitr0t.omnibox agentPreview 'different private prompt' | jq -r '.id') == "$agent_id" ]]
+unset_agent=$(omarchy-shell shell call bitr0t.omnibox agentUnsetPreview 'must not enter setup argv')
+jq -e '
+  .actionId == "native.agent-setup"
+  and .argv == ["omarchy","agent","--pick"]
+  and .confirm == false
+' <<<"$unset_agent" >/dev/null
+agent_isolation=$(omarchy-shell shell call bitr0t.omnibox agentIsolationPreview 'pkg private-provider-prompt')
+jq -e '
+  .mode == "Agent" and .filePending == false and .fileCommand == 0
+  and .providerPending == false and .providerCommand == 0
+  and .fileRows == 0 and .providerRows == 0
+' <<<"$agent_isolation" >/dev/null
+[[ $(omarchy-shell shell call bitr0t.omnibox agentPersistenceGuard "$agent_prompt") == '{"ok":true,"usagePersisted":false,"metricsContainPrompt":false}' ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox providerRequestPreview '? pkg private-provider-prompt') == '[]' ]]
+omarchy-shell shell call bitr0t.omnibox setInteractionQuery "? $agent_prompt" >/dev/null
+sleep 0.05
+[[ $(omarchy-shell shell call bitr0t.omnibox objectIdAt 0) == "$agent_id" ]]
+[[ -z $(omarchy-shell shell call bitr0t.omnibox objectIdAt 1) ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox enterAgentConfirmationPreview "$agent_prompt") == Confirm ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox detailAt 0) == *'unattended'* ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox detailAt 0) == *'<img src='* ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox detailAt 0) == *'$('* ]]
+[[ ! -e /tmp/omnibox-agent-noexec ]]
+omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
 
 if (( $(omarchy-shell shell call bitr0t.omnibox projectCount '') > 0 )); then
   project_preview=$(omarchy-shell shell call bitr0t.omnibox projectPreview omnibox)

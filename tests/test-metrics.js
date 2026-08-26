@@ -63,6 +63,14 @@ test('records first-party aggregate activation dimensions only', () => {
     { source: 'providers', type: 'provider' }, { id: 'provider.exfiltrate' }, false);
   assert.equal(state.sources.providers, 1);
   assert.equal(Object.hasOwn(state.actions, 'provider.exfiltrate'), false);
+
+  const prompt = 'private $(touch /tmp/no); agent prompt';
+  state = Metrics.recordActivation(state,
+    { source: 'native', type: 'command', title: prompt, value: { prompt } },
+    { id: 'native.agent-prompt', argv: ['omarchy', 'agent', 'prompt', prompt] }, false);
+  assert.equal(state.sources.native, 1);
+  assert.equal(state.actions['native/native.agent-prompt'], 1);
+  assert.equal(JSON.stringify(state).includes(prompt), false);
 });
 
 test('buckets bounded latency without recording raw values', () => {

@@ -1049,8 +1049,9 @@ Item {
         })
       } else {
         root.appendCheckedAction(actions, {
-          id: "native.run",
-          title: "Run",
+          id: nativeSpec.actionId || "native.run",
+          title: nativeSpec.actionTitle || "Run",
+          subtitle: nativeSpec.confirmDetail || "",
           executor: "argv",
           argv: nativeSpec.argv || [],
           lifecycle: nativeSpec.lifecycle || "keepOpen",
@@ -1283,6 +1284,15 @@ Item {
   }
 
   function runFileSearch(query) {
+    var fileMode = Query.parse(query, null).mode
+    if (fileMode === "Shell" || fileMode === "Agent") {
+      root.fileRows = []
+      fdProc.latestRun += 1
+      fdProc.pending = false
+      fdProc.pendingCommand = []
+      fdProc.running = false
+      return
+    }
     if (!query) {
       root.fileRows = []
       fdProc.latestRun += 1
@@ -1462,7 +1472,7 @@ Item {
   }
 
   function nativeCandidateForCommand(command, matchScore) {
-    if (!command) return null
+    if (!command || Native.reservedCommand(command)) return null
     var policy = command.policy || Native.classify(command)
     var argv = Native.routeArgv(command.route)
     if (argv.length === 0) return null
@@ -1529,6 +1539,14 @@ Item {
       }
     }
     return root.bestRows(rows, root.configMaxResults())
+  }
+
+  function agentRows(prompt, agentOverride) {
+    var agent = agentOverride === undefined
+      ? String(root.nativeStates["default-agent"] || "unset")
+      : String(agentOverride || "unset")
+    var spec = Native.agentIntent(String(prompt || ""), agent)
+    return spec ? [root.nativeCandidateFromSpec(spec)] : []
   }
 
 
@@ -1689,6 +1707,14 @@ Item {
   function runProviders(query) {
     providerPublishTimer.stop()
     root.providerRows = []
+    var providerMode = Query.parse(query, null).mode
+    if (providerMode === "Shell" || providerMode === "Agent") {
+      providersProc.latestRun += 1
+      providersProc.pending = false
+      providersProc.pendingCommand = []
+      providersProc.running = false
+      return
+    }
     if (root.opened) root.rebuildDisplay()
 
     if (!query || root.providerList.length === 0) {
@@ -1878,6 +1904,8 @@ Item {
       for (var f = 0; f < rows.length; f++) rows[f].matchScore = f
     } else if (parsed.mode === "Shell") {
       rows = root.runRows(query)
+    } else if (parsed.mode === "Agent") {
+      rows = root.agentRows(parsed.body)
     } else {
       if (!root.sourceRegistry) root.buildSourceRegistry()
       var collected = Registry.collect(root.sourceRegistry, parsed, { query: query })
@@ -1965,7 +1993,8 @@ Item {
     root.rebuildDisplay(false)
 
     var query = root.currentQuery()
-    if (query && Query.parse(query, null).mode !== "Shell") searchTimer.restart()
+    if (query && Query.parse(query, null).mode !== "Shell"
+        && Query.parse(query, null).mode !== "Agent") searchTimer.restart()
     else searchTimer.stop()
   }
 
@@ -2074,6 +2103,69 @@ Item {
     return JSON.stringify(preview)
   }
 
+  function agentPreview(prompt, agentOverride) {
+    var candidates = root.agentRows(String(prompt || ""), agentOverride)
+    if (candidates.length === 0) return JSON.stringify({ ok: false })
+    var result = root.typedResultForCandidate(candidates[0])
+    if (!result || result.actions.length === 0) return JSON.stringify({ ok: false })
+    var action = result.actions[0]
+    return JSON.stringify({
+      ok: true,
+      mode: Query.parse("? " + String(prompt || ""), null).mode,
+      id: result.id,
+      source: result.source,
+      title: result.title,
+      actionId: action.id,
+      argv: action.argv,
+      lifecycle: action.lifecycle,
+      risk: action.risk,
+      confirm: action.confirm
+    })
+  }
+  function agentUnsetPreview(prompt) {
+    return root.agentPreview(prompt, "unset")
+  }
+  function agentIsolationPreview(prompt) {
+    var query = "? " + String(prompt || "")
+    root.runFileSearch(query)
+    root.runProviders(query)
+    return JSON.stringify({
+      mode: Query.parse(query, null).mode,
+      filePending: fdProc.pending,
+      fileCommand: fdProc.pendingCommand.length,
+      providerPending: providersProc.pending,
+      providerCommand: providersProc.pendingCommand.length,
+      fileRows: root.fileRows.length,
+      providerRows: root.providerRows.length
+    })
+  }
+  function agentPersistenceGuard(prompt) {
+    var candidates = root.agentRows(String(prompt || ""))
+    if (candidates.length === 0) return JSON.stringify({ ok: false })
+    var result = root.typedResultForCandidate(candidates[0])
+    if (!result || result.actions.length === 0) return JSON.stringify({ ok: false })
+    root.recordTypedUsage(result, result.actions[0])
+    var metricProbe = Metrics.recordActivation(root.metrics, result, result.actions[0], false)
+    return JSON.stringify({
+      ok: true,
+      usagePersisted: Object.prototype.hasOwnProperty.call(root.usage, result.id),
+      metricsContainPrompt: JSON.stringify(metricProbe).indexOf(String(prompt || "")) >= 0
+    })
+  }
+
+
+
+  function enterAgentConfirmationPreview(prompt, agentOverride) {
+    var candidates = root.agentRows(String(prompt || ""), agentOverride)
+    if (candidates.length === 0) return "NoResult"
+    var result = root.typedResultForCandidate(candidates[0])
+    if (!result || result.actions.length === 0) return "NoAction"
+    root.resetInteraction()
+    root.activeResult = result
+    root.chooseAction(result.actions[0])
+    return root.interactionMode
+  }
+
   function enterNativeArgumentPreview(query) {
     var candidates = root.nativeRows(String(query || ""))
     if (candidates.length === 0) return "NoResult"
@@ -2170,6 +2262,7 @@ Item {
   }
 
   function providerRequestPreview(query) {
+    if (Query.parse(String(query || ""), null).mode === "Agent") return "[]"
     var requests = []
     var context = root.providerContext()
     for (var i = 0; i < root.providerList.length; i++) {
@@ -2322,7 +2415,8 @@ Item {
         }
       }
     } else if (root.interactionMode === "Confirm" && root.activeAction) {
-      var confirmDetail = root.activeResult ? root.activeResult.title : ""
+      var confirmDetail = root.activeAction.subtitle
+        || (root.activeResult ? root.activeResult.title : "")
       if (root.activeResult && root.activeResult.source === "providers"
           && root.activeResult.value && root.activeResult.value.providerId)
         confirmDetail += " · Provider " + root.activeResult.value.providerId
@@ -3590,7 +3684,8 @@ Item {
     interval: 220
     onTriggered: {
       var query = root.currentQuery()
-      if (!query || query.charAt(0) === ">") {
+      var searchMode = Query.parse(query, null).mode
+      if (!query || searchMode === "Shell" || searchMode === "Agent") {
         root.fileRows = []
         root.providerRows = []
         return
@@ -4063,6 +4158,7 @@ Item {
                 id: iconText
                 visible: row.icon.length > 0 && !row.appIcon
                 text: row.icon
+                textFormat: Text.PlainText
                 color: row.hasCursor ? root.selectedText : root.foreground
                 font.family: row.iconFont.length > 0 ? row.iconFont : root.fontFamily
                 font.pixelSize: Style.font.iconLarge
@@ -4102,6 +4198,7 @@ Item {
                 Text {
                   width: parent.width
                   text: row.label
+                  textFormat: Text.PlainText
                   color: row.hasCursor ? root.selectedText : root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.title
@@ -4112,6 +4209,7 @@ Item {
                 Text {
                   width: parent.width
                   text: row.detail
+                  textFormat: Text.PlainText
                   visible: row.detail.length > 0
                   color: row.hasCursor ? root.selectedText : root.foreground
                   opacity: row.hasCursor ? 1.0 : 0.72
@@ -4124,6 +4222,7 @@ Item {
               Text {
                 visible: row.sourceBadge.length > 0
                 text: row.sourceBadge.toUpperCase()
+                textFormat: Text.PlainText
                 color: row.hasCursor ? root.selectedText : root.foreground
                 opacity: row.hasCursor ? 0.9 : 0.58
                 font.family: root.fontFamily

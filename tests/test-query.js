@@ -2,13 +2,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Query = require('../js/Query.js');
 
-test('parses normal, shell, and calculator modes', () => {
+test('parses normal, shell, agent, and calculator modes', () => {
   assert.deepEqual(Query.parse('  ghost  '), {
     raw: '  ghost  ', text: 'ghost', body: 'ghost', mode: 'Search', forced: false,
     aliasResultId: '', aliasActionId: ''
   });
   assert.equal(Query.parse(' >  uname -a ').mode, 'Shell');
   assert.equal(Query.parse(' >  uname -a ').body, 'uname -a');
+  assert.equal(Query.parse(' ?  fix $(touch /tmp/no); `id` ').mode, 'Agent');
+  assert.equal(Query.parse(' ?  fix $(touch /tmp/no); `id` ').body,
+    'fix $(touch /tmp/no); `id`');
+  assert.equal(Query.parse('?').forced, true);
   assert.equal(Query.parse('= 2 + 2').mode, 'Calculator');
   assert.equal(Query.parse('= 2 + 2').body, '2 + 2');
   assert.equal(Query.parse('= 2 + 2').forced, true);
@@ -41,8 +45,9 @@ test('resolves exact safe aliases only', () => {
 });
 
 test('prefix modes never resolve aliases', () => {
-  const aliases = { '>ls': 'app:wrong', '=2': 'app:wrong' };
+  const aliases = { '>ls': 'app:wrong', '?explain': 'app:wrong', '=2': 'app:wrong' };
   assert.equal(Query.parse('>ls', aliases).aliasResultId, '');
+  assert.equal(Query.parse('?explain', aliases).aliasResultId, '');
   assert.equal(Query.parse('=2', aliases).aliasResultId, '');
 });
 
