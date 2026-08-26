@@ -4159,6 +4159,8 @@ Item {
                 visible: row.icon.length > 0 && !row.appIcon
                 text: row.icon
                 textFormat: Text.PlainText
+                maximumLineCount: 1
+                wrapMode: Text.NoWrap
                 color: row.hasCursor ? root.selectedText : root.foreground
                 font.family: row.iconFont.length > 0 ? row.iconFont : root.fontFamily
                 font.pixelSize: Style.font.iconLarge
@@ -4199,6 +4201,8 @@ Item {
                   width: parent.width
                   text: row.label
                   textFormat: Text.PlainText
+                  maximumLineCount: 1
+                  wrapMode: Text.NoWrap
                   color: row.hasCursor ? root.selectedText : root.foreground
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.title
@@ -4210,6 +4214,8 @@ Item {
                   width: parent.width
                   text: row.detail
                   textFormat: Text.PlainText
+                  maximumLineCount: 1
+                  wrapMode: Text.NoWrap
                   visible: row.detail.length > 0
                   color: row.hasCursor ? root.selectedText : root.foreground
                   opacity: row.hasCursor ? 1.0 : 0.72
@@ -4223,6 +4229,8 @@ Item {
                 visible: row.sourceBadge.length > 0
                 text: row.sourceBadge.toUpperCase()
                 textFormat: Text.PlainText
+                maximumLineCount: 1
+                wrapMode: Text.NoWrap
                 color: row.hasCursor ? root.selectedText : root.foreground
                 opacity: row.hasCursor ? 0.9 : 0.58
                 font.family: root.fontFamily

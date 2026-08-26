@@ -659,7 +659,7 @@ Requirements:
   search and cached learning; only Agent mode may expose a launcher route.
 - A configured prompt’s activation always enters Confirm. Confirmation states
   that Omarchy launches the configured agent with unattended permissions and
-  shows the concrete prompt.
+  shows a bounded single-line plain-text prompt preview.
 - Confirmed activation delegates through `omarchy agent prompt` with lifecycle
   `close`; that installed launcher opens the visible agent terminal itself, so
   Omnibox does not add a redundant terminal wrapper or invoke an agent binary.

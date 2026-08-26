@@ -280,7 +280,7 @@ function agentIntent(prompt, defaultAgent) {
     result.actionId = "native.agent-prompt";
     result.actionTitle = value ? "Send prompt" : "Open agent";
     result.learnable = false;
-    result.confirmDetail = "Omarchy launches the configured agent unattended with filesystem and network access.\nPrompt: " + (value || "(interactive session)");
+    result.confirmDetail = "Agent runs unattended · filesystem and network access · Prompt: " + (preview || "(interactive session)");
     result.route = value ? "omarchy agent prompt" : "omarchy agent";
     result.provenance = "Omarchy default-agent launcher";
     return result;

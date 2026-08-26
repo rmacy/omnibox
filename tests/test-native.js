@@ -156,6 +156,7 @@ test('builds confirmed default-agent delegation without prompt-derived identity'
   assert.equal(agent.confirm, true);
   assert.match(agent.confirmDetail, /unattended/);
   assert.equal(agent.confirmDetail.includes('$(touch'), true);
+  assert.equal(agent.confirmDetail.includes('\n'), false);
   assert.equal(Native.agentIntent('different prompt', 'codex').id, agent.id);
 
   const interactive = Native.agentIntent('', 'omp');

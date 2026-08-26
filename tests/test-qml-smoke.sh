@@ -97,6 +97,7 @@ sleep 0.05
 [[ $(omarchy-shell shell call bitr0t.omnibox detailAt 0) == *'unattended'* ]]
 [[ $(omarchy-shell shell call bitr0t.omnibox detailAt 0) == *'<img src='* ]]
 [[ $(omarchy-shell shell call bitr0t.omnibox detailAt 0) == *'$('* ]]
+[[ $(omarchy-shell shell call bitr0t.omnibox detailAt 0) != *$'\n'* ]]
 [[ ! -e /tmp/omnibox-agent-noexec ]]
 omarchy-shell shell call bitr0t.omnibox returnInteraction '' >/dev/null
 
